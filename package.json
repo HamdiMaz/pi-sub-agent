@@ -5,6 +5,17 @@
   "type": "module",
   "license": "MIT",
   "author": "Maz Li",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HamdiMaz/pi-sub-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HamdiMaz/pi-sub-agent/issues"
+  },
+  "homepage": "https://github.com/HamdiMaz/pi-sub-agent#readme",
+  "engines": {
+    "node": ">=20.6.0"
+  },
   "keywords": [
     "pi-package",
     "pi-extension",

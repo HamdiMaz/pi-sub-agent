@@ -16,6 +16,20 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	}
 }
 
+async function withIsolatedPiAgentDir<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = join(dir, "config");
+	try {
+		return await fn();
+	} finally {
+		if (originalAgentDir === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		}
+	}
+}
+
 function escapeRegExp(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -755,28 +769,30 @@ test("uses the parent model for bundled agents that do not pin a model", async (
 		const tool = tools[0] as ExecutableTool | undefined;
 		assert.ok(tool);
 
-		const originalArgv = process.argv[1];
-		process.argv[1] = fakePi;
-		try {
-			const result = await tool.execute(
-				"tool-call-1",
-				{ agent: "worker", task: "capture argv", agentScope: "user" },
-				undefined,
-				undefined,
-				{ cwd: dir, hasUI: false, model: { provider: "openai", id: "gpt-5" } },
-			);
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "capture argv", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false, model: { provider: "openai", id: "gpt-5" } },
+				);
 
-			const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
-			const modelFlagIndex = argv.indexOf("--model");
-			assert.notEqual(modelFlagIndex, -1);
-			assert.equal(argv[modelFlagIndex + 1], "openai/gpt-5:high");
-		} finally {
-			if (originalArgv === undefined) {
-				process.argv.splice(1, 1);
-			} else {
-				process.argv[1] = originalArgv;
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const modelFlagIndex = argv.indexOf("--model");
+				assert.notEqual(modelFlagIndex, -1);
+				assert.equal(argv[modelFlagIndex + 1], "openai/gpt-5:high");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
 			}
-		}
+		});
 	});
 });
 
@@ -836,6 +852,339 @@ test("single-agent tasks are passed over stdin instead of exposing prompt text i
 				process.argv[1] = originalArgv;
 			}
 		}
+	});
+});
+
+test("single-agent failures surface subprocess stderr in LLM-facing content", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-stderr.mjs");
+		await writeFile(
+			fakePi,
+			`console.error("child process failed before producing assistant output");\n` +
+				`process.exit(23);\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail before output", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 23);
+				assert.match(result.details.results[0]?.stderr ?? "", /child process failed/);
+				assert.match(text, /child process failed/);
+				assert.match(text, /Exit code:\s*23/);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent failures include assistant output and subprocess stderr", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-output-and-stderr.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "assistant explained partial progress" }], stopReason: "end" } }));\n` +
+				`console.error("stderr explains why the child exited non-zero");\n` +
+				`process.exit(24);\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail after partial output", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 24);
+				assert.match(text, /assistant explained partial progress/);
+				assert.match(text, /stderr explains why/);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent failures include stop reasons alongside assistant output", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-output-stop-reason.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "assistant explained partial progress" }], stopReason: "error" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail by stopReason after partial output", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 0);
+				assert.equal(result.details.results[0]?.stopReason, "error");
+				assert.match(text, /assistant explained partial progress/);
+				assert.match(text, /stopReason:[\s\S]*error/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent stop reasons are not deduped against assistant output text", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-stop-reason-overlap.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "assistant mentioned error (exit code 0) before failing" }], stopReason: "error" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail with overlapping output text", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.match(text, /assistant mentioned error/);
+				assert.match(text, /stopReason:[\s\S]*error/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent stopReason failures include the stop reason when no output exists", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-stop-reason.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail by stopReason", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				assert.equal(result.details.results[0]?.exitCode, 0);
+				assert.equal(result.details.results[0]?.stopReason, "error");
+				assert.match(result.content[0]?.text ?? "", /stopReason:[\s\S]*error/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent unknown agents surface available-agent guidance", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "missing-agent", task: "do work", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.equal(result.details.results[0]?.exitCode, 1);
+			assert.match(result.content[0]?.text ?? "", /Unknown agent: "missing-agent"/);
+			assert.match(result.content[0]?.text ?? "", /Available: .*worker/);
+		});
 	});
 });
 
@@ -1251,6 +1600,13 @@ test("package manifest declares public Pi package runtime and release metadata",
 	const license = await readFile("LICENSE", "utf8");
 
 	assert.match(license, new RegExp(`Copyright \\(c\\) 2026 ${escapeRegExp(pkg.author)}`));
+	assert.deepEqual(pkg.repository, {
+		type: "git",
+		url: "git+https://github.com/HamdiMaz/pi-sub-agent.git",
+	});
+	assert.deepEqual(pkg.bugs, { url: "https://github.com/HamdiMaz/pi-sub-agent/issues" });
+	assert.equal(pkg.homepage, "https://github.com/HamdiMaz/pi-sub-agent#readme");
+	assert.equal(pkg.engines.node, ">=20.6.0");
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-coding-agent"], "*");
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-ai"], "*");
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-tui"], "*");

@@ -359,6 +359,26 @@ function hasFailedSubagentResult(details: unknown): boolean {
 	return Array.isArray(details.results) && details.results.some(isFailedResultLike);
 }
 
+function addDistinctSection(parts: string[], label: string, value: string | undefined): void {
+	const trimmed = value?.trim();
+	if (!trimmed) return;
+	const section = `${label}:\n${trimmed}`;
+	if (parts.includes(section)) return;
+	parts.push(section);
+}
+
+function formatFailureOutput(result: SingleResult): string {
+	const parts: string[] = [];
+	// Keep diagnostics after assistant output because truncateForToolContent() preserves the tail.
+	addDistinctSection(parts, "Output", collectFinalOutput(result.messages));
+	addDistinctSection(parts, "stderr", result.stderr);
+	addDistinctSection(parts, "Error", result.errorMessage);
+	addDistinctSection(parts, "stopReason", result.stopReason ? `${result.stopReason} (exit code ${result.exitCode})` : undefined);
+	if (result.exitCode !== 0 && !result.stopReason) parts.push(`Exit code:\n${result.exitCode}`);
+	if (parts.length > 0) return parts.join("\n\n");
+	return `Subagent exited with code ${result.exitCode}.`;
+}
+
 function snapshotResult(result: SingleResult): SingleResult {
 	return {
 		...result,
@@ -853,7 +873,7 @@ export default function (pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text: truncateForToolContent(result.errorMessage || collectFinalOutput(result.messages) || "Subagent failed"),
+								text: truncateForToolContent(formatFailureOutput(result)),
 							},
 						],
 						details: makeDetails("single")([result]),

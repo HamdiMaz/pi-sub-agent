@@ -22,6 +22,19 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
+function frontmatterString(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function parseTools(value: unknown): string[] | undefined {
+	const rawTools = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+	const tools = rawTools
+		.filter((tool): tool is string => typeof tool === "string")
+		.map((tool) => tool.trim())
+		.filter(Boolean);
+	return tools.length > 0 ? tools : undefined;
+}
+
 function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
@@ -48,29 +61,29 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
+		const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+		const name = frontmatterString(frontmatter.name);
+		const description = frontmatterString(frontmatter.description);
 
-		if (!frontmatter.name || !frontmatter.description) {
+		if (!name || !description) {
 			continue;
 		}
 
-		const tools = frontmatter.tools
-			?.split(",")
-			.map((t: string) => t.trim())
-			.filter(Boolean);
+		const tools = parseTools(frontmatter.tools);
+		const model = frontmatterString(frontmatter.model);
 
 		const agent: AgentConfig = {
-			name: frontmatter.name,
-			description: frontmatter.description,
+			name,
+			description,
 			systemPrompt: body,
 			source,
 			filePath,
 		};
-		if (tools?.length) {
+		if (tools) {
 			agent.tools = tools;
 		}
-		if (frontmatter.model) {
-			agent.model = frontmatter.model;
+		if (model) {
+			agent.model = model;
 		}
 		agents.push(agent);
 	}

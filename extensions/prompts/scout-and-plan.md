@@ -1,5 +1,6 @@
 ---
 description: Scout gathers context, planner creates implementation plan (no implementation)
+argument-hint: "<request>"
 ---
 Use the subagent tool with the chain parameter to execute this workflow:
 

@@ -16,7 +16,7 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 | Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
 | Chain | `{ chain: [...] }` | Runs steps sequentially; `{previous}` is replaced with prior output. |
 
-Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, model, tool allowlist, and working directory.
+Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, tool allowlist, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level.
 
 ### Parameter reference
 
@@ -50,21 +50,21 @@ When two agents share the same `name`, later sources override earlier ones: bund
 name: reviewer
 description: Code review specialist for quality and security analysis
 tools: read, grep, find, ls, bash
-model: claude-sonnet-4-5
+# Optional: model: provider/model-id
 ---
 
 System prompt for the agent goes here.
 ```
 
 - `name` and `description` are required.
-- `tools` is optional; omit it to use Pi's default active tools.
-- `model` is optional; omit it to use the current/default Pi model.
+- `tools` is optional and can be a comma-separated string or YAML list; omit it to use Pi's default active tools.
+- `model` is optional; omit it to inherit the active parent Pi model and thinking level.
 
 ## Bundled agents
 
 | Agent | Purpose | Tools |
 | --- | --- | --- |
-| `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls`, `bash` |
+| `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls` |
 | `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
 | `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
 | `worker` | General-purpose implementation in an isolated context. | Pi defaults |

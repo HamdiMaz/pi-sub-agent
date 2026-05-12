@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
 - Resolved subagent `cwd` overrides relative to the parent Pi working directory and accepted leading `@` path prefixes.
 - Fixed abort escalation for subagent subprocesses that ignore `SIGTERM` by tracking process close state before sending `SIGKILL`.
 - Replaced hard-coded expand shortcut text in subagent renderers with Pi keybinding-aware hints.
+- Loaded agent frontmatter defensively, including YAML-list `tools`, while skipping malformed agent definitions instead of throwing.
+- Removed provider-specific model pins from bundled agents so subagents inherit the active parent Pi model and thinking level unless a custom agent explicitly sets `model`.
+- Reduced the bundled `scout` agent to read-only search tools by removing `bash` from its default allowlist.
 
 ### Chores
 
@@ -36,7 +39,8 @@ All notable changes to this project will be documented in this file.
 - Fixed streaming update snapshots so active subprocesses stay marked as running until their final exit code is known.
 - Switched `agentScope` to a Google-compatible `StringEnum` schema and declared Pi runtime imports as peer dependencies.
 - Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development workflows.
-- Declared bundled workflow prompts in the Pi package manifest so Pi can discover them as package prompt resources.
+- Declared the explicit extension entrypoint and bundled workflow prompts in the Pi package manifest so Pi can discover package resources without treating helper modules as extensions.
+- Added `argument-hint` metadata to bundled workflow prompt templates for clearer slash-command autocomplete.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation and keybinding-aware renderer hints.
-- Expanded public and extension documentation with requirements, parameter references, rendering behavior, and abort semantics.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, and explicit package entrypoint metadata.
+- Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, YAML-list tool frontmatter, and prompt autocomplete behavior.

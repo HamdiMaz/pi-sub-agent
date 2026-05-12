@@ -17,7 +17,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 
 - Pi coding agent 0.74 or newer.
 - The `pi` executable available to the parent process (normal when the package runs inside Pi).
-- Credentials for any models selected by bundled or custom agents.
+- Credentials for the active parent Pi model, plus any model explicitly selected by a custom agent.
 
 ## Installation
 
@@ -99,13 +99,15 @@ Agents are Markdown files with YAML frontmatter:
 name: my-agent
 description: What this agent does
 tools: read, grep, find, ls
-model: claude-haiku-4-5
+# Optional: model: provider/model-id
 ---
 
 System prompt for the agent goes here.
 ```
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
+
+`tools` may be a comma-separated string or a YAML list. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
 
 | Scope | Loaded agents |
 | --- | --- |

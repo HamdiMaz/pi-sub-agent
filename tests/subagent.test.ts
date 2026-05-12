@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -101,6 +101,29 @@ test("discovers extension, user, and nearest project agents with documented prec
 				process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 			}
 		}
+	});
+});
+
+test("discovers agents with YAML list tools and skips invalid frontmatter without throwing", async () => {
+	await withTempDir(async (dir) => {
+		const extensionAgentsDir = join(dir, "extension-agents");
+		await mkdir(extensionAgentsDir, { recursive: true });
+		await writeFile(
+			join(extensionAgentsDir, "list-tools.md"),
+			`---\nname: list-tools\ndescription: Uses YAML list tools\ntools:\n  - read\n  - grep\n---\n\nPrompt body\n`,
+			"utf8",
+		);
+		await writeFile(
+			join(extensionAgentsDir, "invalid.md"),
+			`---\nname: invalid\ndescription:\n  nested: value\ntools:\n  - read\n---\n\nInvalid metadata should be ignored\n`,
+			"utf8",
+		);
+
+		const discovery = discoverAgents(dir, "project", extensionAgentsDir);
+		assert.deepEqual(
+			discovery.agents.map((agent) => [agent.name, agent.description, agent.tools]),
+			[["list-tools", "Uses YAML list tools", ["read", "grep"]]],
+		);
 	});
 });
 
@@ -651,6 +674,65 @@ test("parallel mode treats model error stop reasons as failed tasks", async () =
 	});
 });
 
+test("uses the parent model for bundled agents that do not pin a model", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false; model: { provider: string; id: string } },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-argv.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getThinkingLevel() {
+				return "high" as const;
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "capture argv", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false, model: { provider: "openai", id: "gpt-5" } },
+			);
+
+			const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+			const modelFlagIndex = argv.indexOf("--model");
+			assert.notEqual(modelFlagIndex, -1);
+			assert.equal(argv[modelFlagIndex + 1], "openai/gpt-5:high");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefixes", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }> };
@@ -773,6 +855,32 @@ test("single-agent results truncate LLM-facing content while retaining full deta
 	});
 });
 
+test("bundled agents inherit the active Pi model and minimize tool access unless users override them", async () => {
+	const agentDir = join("extensions", "agents");
+	const files = (await readdir(agentDir)).filter((file) => file.endsWith(".md"));
+	assert.ok(files.length > 0);
+	for (const file of files) {
+		const content = await readFile(join(agentDir, file), "utf8");
+		assert.doesNotMatch(content, /^model:/m, `${file} should not pin a provider-specific model`);
+	}
+
+	const discovery = discoverAgents(process.cwd(), "project", agentDir);
+	const scout = discovery.agents.find((agent) => agent.name === "scout");
+	assert.ok(scout);
+	assert.ok(!scout.tools?.includes("bash"), "scout should use read-only search tools instead of bash");
+});
+
+test("workflow prompt templates include autocomplete metadata", async () => {
+	const promptDir = join("extensions", "prompts");
+	const files = (await readdir(promptDir)).filter((file) => file.endsWith(".md"));
+	assert.deepEqual(files.sort(), ["implement-and-review.md", "implement.md", "scout-and-plan.md"]);
+	for (const file of files) {
+		const content = await readFile(join(promptDir, file), "utf8");
+		assert.match(content, /^description: .+$/m, `${file} should include a description`);
+		assert.match(content, /^argument-hint: "<request>"$/m, `${file} should include an argument hint`);
+	}
+});
+
 test("package manifest declares public Pi package runtime and release metadata", async () => {
 	const pkg = JSON.parse(await readFile("package.json", "utf8"));
 
@@ -785,6 +893,6 @@ test("package manifest declares public Pi package runtime and release metadata",
 	assert.ok(pkg.devDependencies.typebox);
 	assert.ok(pkg.files.includes("CHANGELOG.md"));
 	assert.ok(pkg.scripts.test);
-	assert.deepEqual(pkg.pi.extensions, ["./extensions"]);
+	assert.deepEqual(pkg.pi.extensions, ["./extensions/index.ts"]);
 	assert.deepEqual(pkg.pi.prompts, ["./extensions/prompts"]);
 });

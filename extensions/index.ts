@@ -373,6 +373,7 @@ async function runSingleAgent(
 	agentName: string,
 	task: string,
 	cwd: string | undefined,
+	fallbackModel: string | undefined,
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
@@ -399,8 +400,9 @@ async function runSingleAgent(
 	}
 
 	const args = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) {
-		args.push("--model", agent.model);
+	const selectedModel = agent.model ?? fallbackModel;
+	if (selectedModel) {
+		args.push("--model", selectedModel);
 	}
 	if (agent.tools !== undefined && agent.tools.length > 0) {
 		args.push("--tools", agent.tools.join(","));
@@ -422,8 +424,8 @@ async function runSingleAgent(
 	if (step !== undefined) {
 		result.step = step;
 	}
-	if (agent.model) {
-		result.model = agent.model;
+	if (selectedModel) {
+		result.model = selectedModel;
 	}
 
 	const emitUpdate = () => {
@@ -632,6 +634,9 @@ export default function (pi: ExtensionAPI): void {
 		parameters: SubagentParams,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+			const parentThinkingLevel = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : "off";
+			const parentThinkingSuffix = parentThinkingLevel && parentThinkingLevel !== "off" ? `:${parentThinkingLevel}` : "";
+			const parentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}${parentThinkingSuffix}` : undefined;
 			const discovery = discoverAgents(ctx.cwd, agentScope, join(extensionDir, "agents"));
 			const agents = discovery.agents;
 			const makeDetails = (mode: "single" | "parallel" | "chain") => (results: SingleResult[]): SubagentDetails => ({
@@ -698,6 +703,7 @@ export default function (pi: ExtensionAPI): void {
 						step.agent,
 						task,
 						step.cwd,
+						parentModel,
 						i + 1,
 						signal,
 						onUpdate
@@ -770,6 +776,7 @@ export default function (pi: ExtensionAPI): void {
 						task.agent,
 						task.task,
 						task.cwd,
+						parentModel,
 						undefined,
 						signal,
 						onUpdate
@@ -818,6 +825,7 @@ export default function (pi: ExtensionAPI): void {
 					params.agent,
 					params.task,
 					params.cwd,
+					parentModel,
 					undefined,
 					signal,
 					onUpdate,

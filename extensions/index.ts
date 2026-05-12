@@ -214,17 +214,17 @@ function addUsage(base: UsageStats, raw?: RawUsage): UsageStats {
 	};
 }
 
-function collectTextFromMessage(message: RawMessage): string {
+function collectTextFromMessage(message: RawMessage): string | undefined {
 	const content = message.content;
 	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	for (let i = content.length - 1; i >= 0; i--) {
-		const part = content[i];
+	if (!Array.isArray(content)) return undefined;
+	const textParts: string[] = [];
+	for (const part of content) {
 		if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
-			return part.text;
+			textParts.push(part.text);
 		}
 	}
-	return "";
+	return textParts.length > 0 ? textParts.join("") : undefined;
 }
 
 function collectFinalOutput(messages: RawMessage[]): string {
@@ -233,7 +233,7 @@ function collectFinalOutput(messages: RawMessage[]): string {
 		if (!message) continue;
 		if (message.role !== "assistant") continue;
 		const text = collectTextFromMessage(message);
-		if (text) return text;
+		if (text !== undefined) return text;
 	}
 	return "";
 }
@@ -579,17 +579,18 @@ async function runSingleAgent(
 }
 
 const TaskItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task to delegate" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory override for this task" })),
+	agent: Type.String({ description: "Name of the agent to invoke", minLength: 1 }),
+	task: Type.String({ description: "Task to delegate", minLength: 1 }),
+	cwd: Type.Optional(Type.String({ description: "Working directory override for this task", minLength: 1 })),
 });
 
 const ChainItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
+	agent: Type.String({ description: "Name of the agent to invoke", minLength: 1 }),
 	task: Type.String({
 		description: "Task with optional {previous} placeholder",
+		minLength: 1,
 	}),
-	cwd: Type.Optional(Type.String({ description: "Working directory override for this task" })),
+	cwd: Type.Optional(Type.String({ description: "Working directory override for this task", minLength: 1 })),
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
@@ -598,13 +599,13 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 });
 
 const SubagentParams = Type.Object({
-	agent: Type.Optional(Type.String({ description: "Single mode agent name" })),
-	task: Type.Optional(Type.String({ description: "Single mode task text" })),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list" })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list" })),
+	agent: Type.Optional(Type.String({ description: "Single mode agent name", minLength: 1 })),
+	task: Type.Optional(Type.String({ description: "Single mode task text", minLength: 1 })),
+	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list", minItems: 1, maxItems: MAX_PARALLEL_TASKS })),
+	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1 })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents", default: true })),
-	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode" })),
+	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode", minLength: 1 })),
 });
 
 export default function (pi: ExtensionAPI): void {
@@ -735,7 +736,7 @@ export default function (pi: ExtensionAPI): void {
 							details: makeDetails("chain")(results),
 						};
 					}
-					previous = collectFinalOutput(result.messages) || previous;
+					previous = collectFinalOutput(result.messages);
 				}
 
 				return {

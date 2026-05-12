@@ -16,6 +16,10 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	}
 }
 
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function writeAgent(dir: string, fileName: string, frontmatter: Record<string, string>, body: string): Promise<void> {
 	await mkdir(dir, { recursive: true });
 	const header = Object.entries(frontmatter)
@@ -138,6 +142,33 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 		execute?: unknown;
 		parameters?: {
 			properties?: {
+				agent?: {
+					minLength?: unknown;
+				};
+				task?: {
+					minLength?: unknown;
+				};
+				tasks?: {
+					minItems?: unknown;
+					maxItems?: unknown;
+					items?: {
+						properties?: {
+							agent?: { minLength?: unknown };
+							task?: { minLength?: unknown };
+							cwd?: { minLength?: unknown };
+						};
+					};
+				};
+				chain?: {
+					minItems?: unknown;
+					items?: {
+						properties?: {
+							agent?: { minLength?: unknown };
+							task?: { minLength?: unknown };
+							cwd?: { minLength?: unknown };
+						};
+					};
+				};
 				agentScope?: {
 					type?: unknown;
 					enum?: unknown;
@@ -145,6 +176,9 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 				};
 				confirmProjectAgents?: {
 					default?: unknown;
+				};
+				cwd?: {
+					minLength?: unknown;
 				};
 			};
 		};
@@ -182,6 +216,19 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	assert.ok(promptGuidelines.some((guideline) => typeof guideline === "string" && guideline.includes("subagent")));
 	assert.equal(typeof tool.renderCall, "function");
 	assert.equal(typeof tool.renderResult, "function");
+
+	assert.equal(tool.parameters?.properties?.agent?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.task?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.cwd?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.tasks?.minItems, 1);
+	assert.equal(tool.parameters?.properties?.tasks?.maxItems, 8);
+	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.agent?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.task?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.cwd?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.chain?.minItems, 1);
+	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.agent?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.task?.minLength, 1);
+	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.cwd?.minLength, 1);
 
 	const agentScope = tool.parameters?.properties?.agentScope;
 	assert.ok(agentScope);
@@ -790,6 +837,188 @@ test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefix
 	});
 });
 
+test("single-agent output preserves all assistant text parts in order", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-multipart-output.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "first " }, { type: "toolCall", name: "read", arguments: { path: "README.md" } }, { type: "text", text: "second" }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "produce multipart output", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.equal(result.content[0]?.text, "first second");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("chain handoff uses an empty previous output instead of stale earlier output", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { details: { results: Array<{ task: string }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { chain: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-chain-empty.mjs");
+		await writeFile(
+			fakePi,
+			`const task = process.argv.at(-1) ?? "";\n` +
+				`const text = task.includes("empty") ? "" : task.includes("first") ? "first-output" : task;\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					chain: [
+						{ agent: "worker", task: "first" },
+						{ agent: "worker", task: "empty after {previous}" },
+						{ agent: "worker", task: "third sees {previous}" },
+					],
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.equal(result.details.results[2]?.task, "third sees ");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("chain handoff treats a final empty assistant text as the previous output", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { details: { results: Array<{ task: string }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { chain: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-chain-final-empty.mjs");
+		await writeFile(
+			fakePi,
+			`const task = process.argv.at(-1) ?? "";\n` +
+				`if (task.includes("empty-final")) {\n` +
+				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "intermediate-output" }], stopReason: "tool_use" } }));\n` +
+				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "" }], stopReason: "end" } }));\n` +
+				`} else {\n` +
+				`  const text = task.includes("first") ? "first-output" : task;\n` +
+				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n` +
+				`}\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					chain: [
+						{ agent: "worker", task: "first" },
+						{ agent: "worker", task: "empty-final after {previous}" },
+						{ agent: "worker", task: "third sees {previous}" },
+					],
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.equal(result.details.results[2]?.task, "third sees ");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("single-agent results truncate LLM-facing content while retaining full details", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = {
@@ -883,7 +1112,9 @@ test("workflow prompt templates include autocomplete metadata", async () => {
 
 test("package manifest declares public Pi package runtime and release metadata", async () => {
 	const pkg = JSON.parse(await readFile("package.json", "utf8"));
+	const license = await readFile("LICENSE", "utf8");
 
+	assert.match(license, new RegExp(`Copyright \\(c\\) 2026 ${escapeRegExp(pkg.author)}`));
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-coding-agent"], "*");
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-ai"], "*");
 	assert.equal(pkg.peerDependencies["@earendil-works/pi-tui"], "*");

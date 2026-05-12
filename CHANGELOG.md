@@ -18,7 +18,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Corrected the package author metadata to `Maz Li`.
+- Corrected the package author metadata and MIT license copyright holder to `Maz Li`.
+- Preserved all text parts from final subagent assistant messages instead of dropping earlier text blocks.
+- Cleared chained `{previous}` handoffs when a prior subagent step returns empty output, including final empty assistant messages after earlier progress text, instead of reusing stale output.
 - Treated `stopReason: "error"` and `stopReason: "aborted"` as failed results in parallel summaries and in parallel/chain renderers, matching single-agent error handling.
 - Marked failed subagent runs as Pi tool errors through the `tool_result` hook while preserving structured result details.
 - Added an explicit `confirmProjectAgents: true` schema default so model-facing tool metadata matches the documented security behavior.
@@ -42,5 +44,6 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint and bundled workflow prompts in the Pi package manifest so Pi can discover package resources without treating helper modules as extensions.
 - Added `argument-hint` metadata to bundled workflow prompt templates for clearer slash-command autocomplete.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, and explicit package entrypoint metadata.
+- Tightened the `subagent` tool schema with non-empty string constraints and parallel task item limits for clearer model-facing metadata.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, YAML-list tool frontmatter, and prompt autocomplete behavior.

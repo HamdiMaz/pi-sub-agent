@@ -905,6 +905,141 @@ test("subagents inherit the parent active tool allowlist when agent tools are om
 	});
 });
 
+test("subagents do not inherit the subagent tool and receive depth tracking", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-depth.mjs");
+		await writeFile(
+			fakePi,
+			`const text = JSON.stringify({ argv: process.argv.slice(2), depth: process.env.PI_SUB_AGENT_DEPTH });\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read", "subagent", "bash"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			const originalDepth = process.env.PI_SUB_AGENT_DEPTH;
+			process.argv[1] = fakePi;
+			delete process.env.PI_SUB_AGENT_DEPTH;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "capture inherited tools and depth", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const captured = JSON.parse(result.content[0]?.text ?? "{}") as { argv: string[]; depth?: string };
+				const toolsFlagIndex = captured.argv.indexOf("--tools");
+				assert.notEqual(toolsFlagIndex, -1);
+				assert.equal(captured.argv[toolsFlagIndex + 1], "read,bash");
+				assert.ok(!captured.argv.includes("subagent"), "subagent should not be inherited as an executable child tool");
+				assert.equal(captured.depth, "1");
+			} finally {
+				if (originalDepth === undefined) {
+					delete process.env.PI_SUB_AGENT_DEPTH;
+				} else {
+					process.env.PI_SUB_AGENT_DEPTH = originalDepth;
+				}
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("nested subagent executions are blocked before spawning another Pi process", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: unknown[] } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-nested-should-not-run.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "nested process ran" }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read", "subagent"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		const originalDepth = process.env.PI_SUB_AGENT_DEPTH;
+		process.argv[1] = fakePi;
+		process.env.PI_SUB_AGENT_DEPTH = "1";
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "try to recurse", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.match(result.content[0]?.text ?? "", /Nested subagent execution is disabled/i);
+			assert.deepEqual(result.details.results, []);
+		} finally {
+			if (originalDepth === undefined) {
+				delete process.env.PI_SUB_AGENT_DEPTH;
+			} else {
+				process.env.PI_SUB_AGENT_DEPTH = originalDepth;
+			}
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("agent tool allowlists cannot exceed the parent active tool allowlist", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }> };

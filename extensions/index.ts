@@ -30,6 +30,9 @@ const MAX_PARALLEL_TASKS = 8;
 const MAX_CHAIN_STEPS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
+const SUBAGENT_TOOL_NAME = "subagent";
+const SUBAGENT_DEPTH_ENV = "PI_SUB_AGENT_DEPTH";
+const MAX_SUBAGENT_DEPTH = 1;
 
 interface UsageStats {
 	input: number;
@@ -296,9 +299,15 @@ function resolveSubagentCwd(defaultCwd: string, cwd: string | undefined): string
 	return isAbsolute(normalized) ? normalized : resolve(defaultCwd, normalized);
 }
 
+function getSubagentDepth(value = process.env[SUBAGENT_DEPTH_ENV]): number {
+	if (value === undefined) return 0;
+	const parsed = Number.parseInt(value, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function normalizeToolNames(toolNames: readonly string[] | undefined): string[] | undefined {
 	if (toolNames === undefined) return undefined;
-	return Array.from(new Set(toolNames.map((tool) => tool.trim()).filter(Boolean)));
+	return Array.from(new Set(toolNames.map((tool) => tool.trim()).filter((tool) => Boolean(tool) && tool !== SUBAGENT_TOOL_NAME)));
 }
 
 function resolveChildToolAllowlist(
@@ -413,6 +422,7 @@ async function runSingleAgent(
 	cwd: string | undefined,
 	fallbackModel: string | undefined,
 	parentActiveTools: readonly string[] | undefined,
+	childSubagentDepth: number,
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
@@ -492,8 +502,10 @@ async function runSingleAgent(
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
+			const childEnv = { ...process.env, [SUBAGENT_DEPTH_ENV]: String(childSubagentDepth) };
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: resolveSubagentCwd(defaultCwd, cwd),
+				env: childEnv,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],
 			});
@@ -676,6 +688,7 @@ export default function (pi: ExtensionAPI): void {
 			"Delegate tasks to specialized subagents with isolated context.",
 			`Supports single, parallel, and chain flows; parallel mode is capped at ${MAX_PARALLEL_TASKS} tasks and chain mode at ${MAX_CHAIN_STEPS} steps.`,
 			`LLM-facing output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
+			"Nested subagent calls are disabled to avoid runaway recursive delegation.",
 			'Bundled default agents are always available; user agents are used by default from ~/.pi/agent/agents.',
 			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
 		].join(" "),
@@ -685,6 +698,7 @@ export default function (pi: ExtensionAPI): void {
 			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,
 			'Use subagent with agentScope "project" or "both" only for trusted repositories because project agents are repo-controlled prompts.',
 			"Use subagent chain tasks with {previous} only when each step should consume the previous agent output.",
+			"Do not ask subagent-launched agents to call subagent again; recursive delegation is blocked.",
 		],
 		parameters: SubagentParams,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -719,6 +733,21 @@ export default function (pi: ExtensionAPI): void {
 				};
 			}
 
+			const selectedMode = hasChain ? "chain" : hasParallel ? "parallel" : "single";
+			const currentDepth = getSubagentDepth();
+			if (currentDepth >= MAX_SUBAGENT_DEPTH) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "Nested subagent execution is disabled to avoid runaway recursive delegation.",
+						},
+					],
+					details: makeDetails(selectedMode)([]),
+				};
+			}
+			const childSubagentDepth = currentDepth + 1;
+
 			if ((agentScope === "project" || agentScope === "both") && params.confirmProjectAgents !== false) {
 				const names = new Set<string>();
 				if (params.agent) names.add(params.agent);
@@ -728,7 +757,6 @@ export default function (pi: ExtensionAPI): void {
 					.map((name) => agents.find((agent) => agent.name === name))
 					.filter((agent): agent is AgentConfig => agent !== undefined && agent.source === "project");
 				if (projectAgents.length > 0) {
-					const selectedMode = hasChain ? "chain" : hasParallel ? "parallel" : "single";
 					if (!ctx.hasUI) {
 						return {
 							content: [
@@ -783,6 +811,7 @@ export default function (pi: ExtensionAPI): void {
 						step.cwd,
 						parentModel,
 						parentActiveTools,
+						childSubagentDepth,
 						i + 1,
 						signal,
 						onUpdate
@@ -857,6 +886,7 @@ export default function (pi: ExtensionAPI): void {
 						task.cwd,
 						parentModel,
 						parentActiveTools,
+						childSubagentDepth,
 						undefined,
 						signal,
 						onUpdate
@@ -907,6 +937,7 @@ export default function (pi: ExtensionAPI): void {
 					params.cwd,
 					parentModel,
 					parentActiveTools,
+					childSubagentDepth,
 					undefined,
 					signal,
 					onUpdate,

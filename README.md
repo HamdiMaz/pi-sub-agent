@@ -11,6 +11,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Streams progress, usage, tool-call summaries, final Markdown output, and structured result details.
 - Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
 - Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB) while preserving full structured details for rendering.
+- Prevents recursive subagent fan-out by removing the `subagent` tool from child allowlists and blocking nested subagent invocations.
 - Requires confirmation before running project-local agents; non-interactive runs must explicitly set `confirmProjectAgents: false`.
 - Includes prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
 
@@ -108,7 +109,7 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
 
 Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
 
@@ -124,6 +125,8 @@ Project-local agents are repository-controlled prompts. They can request tools w
 
 Each subagent is a normal child `pi` invocation in the selected `cwd`, so Pi packages and extensions enabled for that working directory still follow Pi's standard package security model. Install only trusted Pi packages and avoid `cwd` overrides into repositories whose Pi configuration you have not reviewed.
 
+Recursive delegation is intentionally blocked. Child Pi processes receive `PI_SUB_AGENT_DEPTH=1`; if a child session somehow invokes `subagent` again, the extension returns a clear error before spawning another process.
+
 Delegated task text is written to the child Pi process over stdin instead of being appended to command-line arguments, reducing process-list exposure and avoiding OS argument-length limits during large chain handoffs.
 
 ## Output limits
@@ -137,6 +140,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
+- Nested `subagent` calls are blocked before spawning another Pi process.
 - Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 

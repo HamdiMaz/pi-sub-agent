@@ -16,7 +16,7 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 | Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
 | Chain | `{ chain: [...] }` | Runs up to 8 steps sequentially; `{previous}` is replaced with prior output. |
 
-Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. Tool access is capped by the parent Pi session's active tool allowlist; agent-level `tools` entries can narrow that list but cannot re-enable disabled parent tools. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
+Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. Tool access is capped by the parent Pi session's active tool allowlist; agent-level `tools` entries can narrow that list but cannot re-enable disabled parent tools. The `subagent` tool itself is removed from child allowlists, and child processes receive depth tracking so nested subagent calls are blocked before spawning again. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
 
 ### Parameter reference
 
@@ -57,7 +57,7 @@ System prompt for the agent goes here.
 ```
 
 - `name` and `description` are required.
-- `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent.
+- `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent. The `subagent` tool is always removed from the child allowlist to avoid recursive delegation.
 - `model` is optional; omit it to inherit the active parent Pi model and thinking level.
 - Agent files with unreadable content, missing required metadata, invalid metadata types, or malformed YAML frontmatter are skipped.
 
@@ -92,6 +92,8 @@ Project-local agents are repository-controlled prompts. Only use `agentScope: "p
 
 Subagents run as normal child `pi` invocations in the selected `cwd`, so Pi packages/extensions enabled for that working directory still use Pi's standard package security model. Install only trusted Pi packages and avoid `cwd` overrides into repositories whose Pi configuration you have not reviewed.
 
+Recursive delegation is intentionally blocked. The parent process sets `PI_SUB_AGENT_DEPTH=1` for child Pi invocations; if a child session somehow invokes `subagent`, the extension returns an error before spawning another process.
+
 Delegated task text is passed to the child Pi process over stdin rather than as an argv value, reducing process-list exposure and avoiding OS argument-length failures for large chained handoffs.
 
 ## Error handling
@@ -102,5 +104,6 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
+- Nested `subagent` calls are blocked before spawning another Pi process.
 - Chains are capped at 8 steps, stop at the first failed step, and return diagnostic output plus completed step details.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

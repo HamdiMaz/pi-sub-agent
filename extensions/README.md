@@ -16,7 +16,7 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 | Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
 | Chain | `{ chain: [...] }` | Runs steps sequentially; `{previous}` is replaced with prior output. |
 
-Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, tool allowlist, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level.
+Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, tool allowlist, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
 
 ### Parameter reference
 
@@ -26,7 +26,7 @@ Each subagent runs `pi --mode json -p --no-session` with the selected agent's sy
 | `tasks` | Parallel | Array of `{ agent, task, cwd? }`; maximum 8 tasks and 4 concurrent subprocesses. |
 | `chain` | Chain | Array of `{ agent, task, cwd? }`; `{previous}` is replaced with prior output. |
 | `agentScope` | All | `"user"` by default; use `"project"` or `"both"` only for trusted repositories. |
-| `confirmProjectAgents` | All | Defaults to `true` and prompts when project-local agents are selected and UI is available. |
+| `confirmProjectAgents` | All | Defaults to `true`; prompts when UI is available and blocks project-local agents in non-interactive runs unless explicitly set to `false`. |
 | `cwd` | Single | Default working directory override for the subprocess. |
 
 `cwd` overrides are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
@@ -87,7 +87,9 @@ LLM-facing tool content is truncated from the tail at Pi's default limits (2,000
 
 ## Security notes
 
-Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. When UI is available, the extension asks for confirmation before running project-local agents unless `confirmProjectAgents: false` is set.
+Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. With the default `confirmProjectAgents: true`, the extension asks for confirmation before running project-local agents when UI is available and cancels in non-interactive runs. Set `confirmProjectAgents: false` only after reviewing and trusting the project agents.
+
+Delegated task text is passed to the child Pi process over stdin rather than as an argv value, reducing process-list exposure and avoiding OS argument-length failures for large chained handoffs.
 
 ## Error handling
 
@@ -95,5 +97,6 @@ Project-local agents are repository-controlled prompts. Only use `agentScope: "p
 - Unknown agents include the available agent list.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
+- Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
 - Chains stop at the first failed step and return completed step details.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

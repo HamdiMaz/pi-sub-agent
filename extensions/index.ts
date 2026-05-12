@@ -400,6 +400,7 @@ async function runSingleAgent(
 	}
 
 	const args = ["--mode", "json", "-p", "--no-session"];
+	const stdinPrompt = `Task: ${task}`;
 	const selectedModel = agent.model ?? fallbackModel;
 	if (selectedModel) {
 		args.push("--model", selectedModel);
@@ -445,14 +446,12 @@ async function runSingleAgent(
 			args.push("--append-system-prompt", file.filePath);
 		}
 
-		args.push(`Task: ${task}`);
-
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: resolveSubagentCwd(defaultCwd, cwd),
 				shell: false,
-				stdio: ["ignore", "pipe", "pipe"],
+				stdio: ["pipe", "pipe", "pipe"],
 			});
 
 			let buffer = "";
@@ -501,6 +500,10 @@ async function runSingleAgent(
 			proc.stderr.on("data", (data) => {
 				result.stderr += data.toString();
 			});
+			proc.stdin?.on("error", () => {
+				// Ignore stdin errors from subprocesses that exit before consuming the prompt.
+			});
+			proc.stdin?.end(stdinPrompt);
 
 			const abort = (): void => {
 				if (aborted) return;
@@ -664,7 +667,7 @@ export default function (pi: ExtensionAPI): void {
 				};
 			}
 
-			if ((agentScope === "project" || agentScope === "both") && params.confirmProjectAgents !== false && ctx.hasUI) {
+			if ((agentScope === "project" || agentScope === "both") && params.confirmProjectAgents !== false) {
 				const names = new Set<string>();
 				if (params.agent) names.add(params.agent);
 				for (const task of params.tasks ?? []) names.add(task.agent);
@@ -673,6 +676,19 @@ export default function (pi: ExtensionAPI): void {
 					.map((name) => agents.find((agent) => agent.name === name))
 					.filter((agent): agent is AgentConfig => agent !== undefined && agent.source === "project");
 				if (projectAgents.length > 0) {
+					const selectedMode = hasChain ? "chain" : hasParallel ? "parallel" : "single";
+					if (!ctx.hasUI) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: "Canceled: running project-local agents requires confirmation, but no UI is available. Set confirmProjectAgents: false only for trusted repositories.",
+								},
+							],
+							details: makeDetails(selectedMode)([]),
+						};
+					}
+
 					const approved = await ctx.ui.confirm(
 						"Run project-local agents?",
 						`Agents: ${projectAgents.map((entry) => entry.name).join(", ")}\nSource: ${discovery.projectAgentsDir ?? "(none)"}`,
@@ -685,7 +701,7 @@ export default function (pi: ExtensionAPI): void {
 									text: "Canceled: project-local agents not approved.",
 								},
 							],
-							details: makeDetails(modeCount === 1 && hasChain ? "chain" : hasParallel ? "parallel" : "single")([]),
+							details: makeDetails(selectedMode)([]),
 						};
 					}
 				}

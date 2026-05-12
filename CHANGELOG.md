@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - Treated `stopReason: "error"` and `stopReason: "aborted"` as failed results in parallel summaries and in parallel/chain renderers, matching single-agent error handling.
 - Marked failed subagent runs as Pi tool errors through the `tool_result` hook while preserving structured result details.
 - Added an explicit `confirmProjectAgents: true` schema default so model-facing tool metadata matches the documented security behavior.
+- Sent delegated task prompts to child Pi processes over stdin instead of process arguments to reduce prompt exposure and avoid argument-length failures in large handoffs.
+- Blocked project-local agents in non-interactive runs unless `confirmProjectAgents: false` is explicitly set.
 - Truncated LLM-facing subagent output with Pi's default tool limits while preserving full structured result details for rendering and follow-up analysis.
 - Resolved subagent `cwd` overrides relative to the parent Pi working directory and accepted leading `@` path prefixes.
 - Fixed abort escalation for subagent subprocesses that ignore `SIGTERM` by tracking process close state before sending `SIGKILL`.
@@ -46,4 +48,4 @@ All notable changes to this project will be documented in this file.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
 - Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, and explicit package entrypoint metadata.
 - Tightened the `subagent` tool schema with non-empty string constraints and parallel task item limits for clearer model-facing metadata.
-- Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, YAML-list tool frontmatter, and prompt autocomplete behavior.
+- Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.

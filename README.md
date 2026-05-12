@@ -9,8 +9,9 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
 - Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
 - Streams progress, usage, tool-call summaries, final Markdown output, and structured result details.
+- Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
 - Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB) while preserving full structured details for rendering.
-- Prompts before running project-local agents in interactive/RPC UI sessions.
+- Requires confirmation before running project-local agents; non-interactive runs must explicitly set `confirmProjectAgents: false`.
 - Includes prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
 
 ## Requirements
@@ -85,7 +86,7 @@ Parallel mode is limited to 8 tasks total, with up to 4 running at once.
 | `tasks` | Parallel | Array of `{ agent, task, cwd? }` items. |
 | `chain` | Chain | Array of `{ agent, task, cwd? }` steps. `{previous}` is replaced with the prior step's final output. |
 | `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. Bundled agents are always available. |
-| `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. |
+| `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. In non-interactive runs, project-local agents are blocked unless this is explicitly set to `false`. |
 | `cwd` | Single | Working directory override for the single-agent subprocess. |
 
 `cwd` overrides on single, parallel, or chain tasks are resolved relative to the parent Pi working directory. A leading `@` is accepted and stripped, matching Pi file-reference conventions.
@@ -117,7 +118,9 @@ Discovery order is bundled extension agents first, then user agents, then projec
 
 ## Security model
 
-Project-local agents are repository-controlled prompts. They can choose tools and can instruct a subagent to read files, run shell commands, or edit code. Keep `agentScope` at the default `"user"` unless you trust the repository. When UI is available, the extension confirms before running project-local agents unless `confirmProjectAgents: false` is set.
+Project-local agents are repository-controlled prompts. They can choose tools and can instruct a subagent to read files, run shell commands, or edit code. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
+
+Delegated task text is written to the child Pi process over stdin instead of being appended to command-line arguments, reducing process-list exposure and avoiding OS argument-length limits during large chain handoffs.
 
 ## Output limits
 
@@ -128,6 +131,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Invalid requests return clear guidance and keep structured result details available to the main agent.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
+- Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
 - Chain mode stops at the first failed step; parallel mode reports per-task success and failure counts.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 

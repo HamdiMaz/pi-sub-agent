@@ -780,6 +780,138 @@ test("uses the parent model for bundled agents that do not pin a model", async (
 	});
 });
 
+test("single-agent tasks are passed over stdin instead of exposing prompt text in argv", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const secretTask = "inspect confidential launch notes without leaking them through argv";
+		const fakePi = join(dir, "fake-pi-stdin.mjs");
+		await writeFile(
+			fakePi,
+			`let stdin = "";\n` +
+				`for await (const chunk of process.stdin) stdin += chunk;\n` +
+				`const text = JSON.stringify({ argv: process.argv.slice(2), stdin });\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: secretTask, agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			const captured = JSON.parse(result.content[0]?.text ?? "{}") as { argv: string[]; stdin: string };
+			assert.ok(captured.stdin.includes(secretTask));
+			assert.ok(captured.argv.every((arg) => !arg.includes(secretTask)), "task text should not be visible in child argv");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("non-interactive project agents require explicit confirmation opt-out", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ agent: string }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope: "project"; confirmProjectAgents?: false },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		const projectAgentsDir = join(projectDir, ".pi", "agents");
+		await writeAgent(projectAgentsDir, "danger.md", {
+			name: "danger",
+			description: "Project controlled agent",
+			tools: "read",
+		}, "Project-local prompt");
+
+		const fakePi = join(dir, "fake-pi-project-agent.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "executed project agent" }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const blocked = await tool.execute(
+				"tool-call-1",
+				{ agent: "danger", task: "do project-controlled work", agentScope: "project" },
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+			assert.match(blocked.content[0]?.text ?? "", /requires.*confirmProjectAgents: false/i);
+			assert.equal(blocked.details.results.length, 0);
+
+			const allowed = await tool.execute(
+				"tool-call-2",
+				{ agent: "danger", task: "do project-controlled work", agentScope: "project", confirmProjectAgents: false },
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+			assert.equal(allowed.content[0]?.text, "executed project agent");
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefixes", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }> };
@@ -906,8 +1038,10 @@ test("chain handoff uses an empty previous output instead of stale earlier outpu
 		const fakePi = join(dir, "fake-pi-chain-empty.mjs");
 		await writeFile(
 			fakePi,
-			`const task = process.argv.at(-1) ?? "";\n` +
-				`const text = task.includes("empty") ? "" : task.includes("first") ? "first-output" : task;\n` +
+			`let stdin = "";\n` +
+				`for await (const chunk of process.stdin) stdin += chunk;\n` +
+				`const task = stdin;\n` +
+				`const text = task.includes("empty") ? "" : task.includes("first") ? "first-output" : task.replace(/^Task: /, "");\n` +
 				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n`,
 			"utf8",
 		);
@@ -968,12 +1102,14 @@ test("chain handoff treats a final empty assistant text as the previous output",
 		const fakePi = join(dir, "fake-pi-chain-final-empty.mjs");
 		await writeFile(
 			fakePi,
-			`const task = process.argv.at(-1) ?? "";\n` +
+			`let stdin = "";\n` +
+				`for await (const chunk of process.stdin) stdin += chunk;\n` +
+				`const task = stdin;\n` +
 				`if (task.includes("empty-final")) {\n` +
 				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "intermediate-output" }], stopReason: "tool_use" } }));\n` +
 				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "" }], stopReason: "end" } }));\n` +
 				`} else {\n` +
-				`  const text = task.includes("first") ? "first-output" : task;\n` +
+				`  const text = task.includes("first") ? "first-output" : task.replace(/^Task: /, "");\n` +
 				`  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "end" } }));\n` +
 				`}\n`,
 			"utf8",

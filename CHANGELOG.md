@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Corrected the package author metadata to `Maz Li`.
+- Treated `stopReason: "error"` and `stopReason: "aborted"` as failed results in parallel summaries and in parallel/chain renderers, matching single-agent error handling.
+- Marked failed subagent runs as Pi tool errors through the `tool_result` hook while preserving structured result details.
+- Added an explicit `confirmProjectAgents: true` schema default so model-facing tool metadata matches the documented security behavior.
 
 ### Chores
 

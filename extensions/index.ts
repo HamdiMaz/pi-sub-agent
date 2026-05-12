@@ -316,6 +316,18 @@ function isTaskError(result: SingleResult): boolean {
 	);
 }
 
+function isFailedResultLike(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	const exitCode = typeof value.exitCode === "number" ? value.exitCode : 0;
+	const stopReason = typeof value.stopReason === "string" ? value.stopReason : undefined;
+	return exitCode !== 0 || stopReason === "error" || stopReason === "aborted";
+}
+
+function hasFailedSubagentResult(details: unknown): boolean {
+	if (!isRecord(details)) return false;
+	return Array.isArray(details.results) && details.results.some(isFailedResultLike);
+}
+
 function snapshotResult(result: SingleResult): SingleResult {
 	return {
 		...result,
@@ -550,12 +562,17 @@ const SubagentParams = Type.Object({
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list" })),
 	agentScope: Type.Optional(AgentScopeSchema),
-	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents" })),
+	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents", default: true })),
 	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode" })),
 });
 
 export default function (pi: ExtensionAPI): void {
 	pi.on("resources_discover", () => ({ promptPaths: [join(extensionDir, "prompts")] }));
+	pi.on("tool_result", (event) => {
+		if (event.toolName !== "subagent") return;
+		if (!hasFailedSubagentResult(event.details)) return;
+		return { isError: true };
+	});
 
 	pi.registerTool({
 		name: "subagent",
@@ -670,7 +687,6 @@ export default function (pi: ExtensionAPI): void {
 								},
 							],
 							details: makeDetails("chain")(results),
-							isError: true,
 						};
 					}
 					previous = collectFinalOutput(result.messages) || previous;
@@ -694,7 +710,6 @@ export default function (pi: ExtensionAPI): void {
 							{ type: "text", text: `Too many parallel tasks; max is ${MAX_PARALLEL_TASKS}.` },
 						],
 						details: makeDetails("parallel")([]),
-						isError: true,
 					};
 				}
 
@@ -734,10 +749,10 @@ export default function (pi: ExtensionAPI): void {
 					return result;
 				});
 
-				const succeeded = results.filter((result) => result.exitCode === 0).length;
+				const succeeded = results.filter((result) => !isTaskError(result)).length;
 				const summary = results
 					.map((result, index) => {
-						const icon = result.exitCode === 0 ? "✓" : "✗";
+						const icon = isTaskError(result) ? "✗" : "✓";
 						const output = makePlaceholder(
 							collectFinalOutput(result.messages) || result.stderr || "(no output)",
 						);
@@ -753,7 +768,6 @@ export default function (pi: ExtensionAPI): void {
 						},
 					],
 					details: makeDetails("parallel")(results),
-					isError: succeeded !== results.length,
 				};
 			}
 
@@ -778,7 +792,6 @@ export default function (pi: ExtensionAPI): void {
 							},
 						],
 						details: makeDetails("single")([result]),
-						isError: true,
 					};
 				}
 				return {
@@ -924,7 +937,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			if (details.mode === "chain") {
-				const successCount = details.results.filter((entry) => entry.exitCode === 0).length;
+				const successCount = details.results.filter((entry) => entry.exitCode !== -1 && !isTaskError(entry)).length;
 				const runningCount = details.results.filter((entry) => entry.exitCode === -1).length;
 				const icon = runningCount > 0 ? theme.fg("warning", "⏳") : successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
 
@@ -933,7 +946,7 @@ export default function (pi: ExtensionAPI): void {
 					container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("chain "))}${theme.fg("accent", `${successCount}/${details.results.length} steps`)}`, 0, 0));
 					for (const entry of details.results) {
 						const entryRunning = entry.exitCode === -1;
-						const entryIcon = entryRunning ? theme.fg("warning", "⏳") : entry.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+						const entryIcon = entryRunning ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 						const displayItems = collectDisplayItems(entry.messages);
 						const finalOutput = collectFinalOutput(entry.messages);
 						container.addChild(new Spacer(1));
@@ -963,7 +976,7 @@ export default function (pi: ExtensionAPI): void {
 
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold("chain "))}${theme.fg("accent", `${successCount}/${details.results.length} steps`)}`;
 				for (const entry of details.results) {
-					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : entry.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 					const displayItems = collectDisplayItems(entry.messages);
 					text += `\n\n${theme.fg("muted", `─── Step ${entry.step ?? "?"}: `)}${theme.fg("accent", entry.agent)} ${entryIcon}`;
 					if (displayItems.length === 0) {
@@ -980,8 +993,8 @@ export default function (pi: ExtensionAPI): void {
 
 			if (details.mode === "parallel") {
 				const runningCount = details.results.filter((entry) => entry.exitCode === -1).length;
-				const successCount = details.results.filter((entry) => entry.exitCode === 0).length;
-				const failCount = details.results.filter((entry) => entry.exitCode > 0).length;
+				const successCount = details.results.filter((entry) => entry.exitCode !== -1 && !isTaskError(entry)).length;
+				const failCount = details.results.filter((entry) => entry.exitCode !== -1 && isTaskError(entry)).length;
 				const isRunning = runningCount > 0;
 				const icon = isRunning ? theme.fg("warning", "⏳") : failCount > 0 ? theme.fg("warning", "◐") : theme.fg("success", "✓");
 				const status = isRunning ? `${successCount + failCount}/${details.results.length} done, ${runningCount} running` : `${successCount}/${details.results.length} tasks`;
@@ -990,7 +1003,7 @@ export default function (pi: ExtensionAPI): void {
 					const container = new Container();
 					container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`, 0, 0));
 					for (const entry of details.results) {
-						const entryIcon = entry.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+						const entryIcon = isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 						const displayItems = collectDisplayItems(entry.messages);
 						const finalOutput = collectFinalOutput(entry.messages);
 						container.addChild(new Spacer(1));
@@ -1018,7 +1031,7 @@ export default function (pi: ExtensionAPI): void {
 
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
 				for (const entry of details.results) {
-					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : entry.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 					const displayItems = collectDisplayItems(entry.messages);
 					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", entry.agent)} ${entryIcon}`;
 					if (displayItems.length === 0) {

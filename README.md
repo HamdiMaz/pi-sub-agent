@@ -96,6 +96,13 @@ Discovery order is bundled extension agents first, then user agents, then projec
 
 Project-local agents are repository-controlled prompts. They can choose tools and can instruct a subagent to read files, run shell commands, or edit code. Keep `agentScope` at the default `"user"` unless you trust the repository. When UI is available, the extension confirms before running project-local agents unless `confirmProjectAgents: false` is set.
 
+## Error handling
+
+- Invalid requests return clear guidance and keep structured result details available to the main agent.
+- Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
+- Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
+- Chain mode stops at the first failed step; parallel mode reports per-task success and failure counts.
+
 ## Development
 
 ```bash

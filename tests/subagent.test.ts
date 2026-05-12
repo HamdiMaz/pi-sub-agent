@@ -119,6 +119,9 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 					enum?: unknown;
 					anyOf?: unknown;
 				};
+				confirmProjectAgents?: {
+					default?: unknown;
+				};
 			};
 		};
 	};
@@ -130,9 +133,10 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	const tools: ToolRecord[] = [];
 	const resourceHandlers: ResourceHandler[] = [];
 	const pi = {
-		on(event: "resources_discover", handler: ResourceHandler) {
-			assert.equal(event, "resources_discover");
-			resourceHandlers.push(handler);
+		on(event: string, handler: unknown) {
+			if (event === "resources_discover") {
+				resourceHandlers.push(handler as ResourceHandler);
+			}
 		},
 		registerTool(tool: ToolRecord) {
 			tools.push(tool);
@@ -159,6 +163,7 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	assert.equal(agentScope.type, "string");
 	assert.deepEqual(agentScope.enum, ["user", "project", "both"]);
 	assert.equal(agentScope.anyOf, undefined);
+	assert.equal(tool.parameters?.properties?.confirmProjectAgents?.default, true);
 
 	assert.equal(resourceHandlers.length, 1);
 	const handler = resourceHandlers[0];
@@ -168,6 +173,68 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	const promptPath = resources.promptPaths[0];
 	assert.ok(promptPath);
 	assert.match(promptPath, /extensions\/prompts$/);
+});
+
+test("marks failed subagent tool results as Pi tool errors without dropping details", () => {
+	type ToolResultHandler = (
+		event: {
+			toolName: string;
+			details?: {
+				mode: "parallel";
+				agentScope: "user";
+				projectAgentsDir: null;
+				results: Array<{ exitCode: number; stopReason?: string }>;
+			};
+		},
+		ctx: unknown,
+	) => { isError: true } | undefined;
+
+	const toolResultHandlers: ToolResultHandler[] = [];
+	const pi = {
+		on(event: string, handler: unknown) {
+			if (event === "tool_result") {
+				toolResultHandlers.push(handler as ToolResultHandler);
+			}
+		},
+		registerTool() {},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+
+	assert.equal(toolResultHandlers.length, 1);
+	const handler = toolResultHandlers[0];
+	assert.ok(handler);
+
+	assert.deepEqual(
+		handler(
+			{
+				toolName: "subagent",
+				details: {
+					mode: "parallel",
+					agentScope: "user",
+					projectAgentsDir: null,
+					results: [{ exitCode: 0, stopReason: "error" }],
+				},
+			},
+			{},
+		),
+		{ isError: true },
+	);
+	assert.equal(
+		handler(
+			{
+				toolName: "subagent",
+				details: {
+					mode: "parallel",
+					agentScope: "user",
+					projectAgentsDir: null,
+					results: [{ exitCode: 0 }],
+				},
+			},
+			{},
+		),
+		undefined,
+	);
+	assert.equal(handler({ toolName: "read" }, {}), undefined);
 });
 
 test("subagent updates mark active subprocesses as running until they close", async () => {
@@ -219,6 +286,213 @@ test("subagent updates mark active subprocesses as running until they close", as
 			assert.ok(updates.length >= 1);
 			assert.equal(updates[0]?.details.results[0]?.exitCode, -1);
 			assert.equal(result.details.results[0]?.exitCode, 0);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("parallel renderer marks model error stop reasons as failed tasks", () => {
+	type ToolRecord = {
+		renderResult?: (
+			result: {
+				content: Array<{ type: "text"; text: string }>;
+				details: {
+					mode: "parallel";
+					agentScope: "user";
+					projectAgentsDir: null;
+					results: Array<{
+						agent: string;
+						agentSource: "extension";
+						task: string;
+						exitCode: number;
+						messages: [];
+						stderr: string;
+						usage: {
+							input: number;
+							output: number;
+							cacheRead: number;
+							cacheWrite: number;
+							cost: number;
+							contextTokens: number;
+							turns: number;
+						};
+						stopReason: "error";
+					}>;
+				};
+			},
+			options: { expanded: false; isPartial: false },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+	};
+
+	const tools: ToolRecord[] = [];
+	const pi = {
+		on() {},
+		registerTool(tool: ToolRecord) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0];
+	assert.ok(tool?.renderResult);
+
+	const rendered = tool.renderResult(
+		{
+			content: [{ type: "text", text: "Parallel tasks: 0/1 succeeded" }],
+			details: {
+				mode: "parallel",
+				agentScope: "user",
+				projectAgentsDir: null,
+				results: [
+					{
+						agent: "worker",
+						agentSource: "extension",
+						task: "fail through model stopReason",
+						exitCode: 0,
+						messages: [],
+						stderr: "",
+						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+						stopReason: "error",
+					},
+				],
+			},
+		},
+		{ expanded: false, isPartial: false },
+		{ fg: (_color, text) => text, bold: (text) => text },
+	);
+
+	assert.match(rendered.text ?? "", /parallel 0\/1 tasks/);
+	assert.match(rendered.text ?? "", /worker ✗/);
+});
+
+test("chain renderer marks model error stop reasons as failed steps", () => {
+	type ToolRecord = {
+		renderResult?: (
+			result: {
+				content: Array<{ type: "text"; text: string }>;
+				details: {
+					mode: "chain";
+					agentScope: "user";
+					projectAgentsDir: null;
+					results: Array<{
+						agent: string;
+						agentSource: "extension";
+						task: string;
+						exitCode: number;
+						messages: [];
+						stderr: string;
+						usage: {
+							input: number;
+							output: number;
+							cacheRead: number;
+							cacheWrite: number;
+							cost: number;
+							contextTokens: number;
+							turns: number;
+						};
+						stopReason: "error";
+						step: number;
+					}>;
+				};
+			},
+			options: { expanded: false; isPartial: false },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+	};
+
+	const tools: ToolRecord[] = [];
+	const pi = {
+		on() {},
+		registerTool(tool: ToolRecord) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0];
+	assert.ok(tool?.renderResult);
+
+	const rendered = tool.renderResult(
+		{
+			content: [{ type: "text", text: "Chain stopped at step 1" }],
+			details: {
+				mode: "chain",
+				agentScope: "user",
+				projectAgentsDir: null,
+				results: [
+					{
+						agent: "worker",
+						agentSource: "extension",
+						task: "fail through model stopReason",
+						exitCode: 0,
+						messages: [],
+						stderr: "",
+						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+						stopReason: "error",
+						step: 1,
+					},
+				],
+			},
+		},
+		{ expanded: false, isPartial: false },
+		{ fg: (_color, text) => text, bold: (text) => text },
+	);
+
+	assert.match(rendered.text ?? "", /chain 0\/1 steps/);
+	assert.match(rendered.text ?? "", /worker ✗/);
+});
+
+test("parallel mode treats model error stop reasons as failed tasks", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ stopReason?: string; exitCode: number }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { tasks: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-error.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "model failed" }], usage: { input: 1, output: 1, totalTokens: 2, cost: { total: 0 } }, model: "test-model", stopReason: "error", errorMessage: "model failed" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ tasks: [{ agent: "worker", task: "fail through model stopReason" }], agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.match(result.content[0]?.text ?? "", /0\/1 succeeded/);
+			assert.equal(result.details.results[0]?.stopReason, "error");
 		} finally {
 			if (originalArgv === undefined) {
 				process.argv.splice(1, 1);

@@ -77,5 +77,6 @@ Project-local agents are repository-controlled prompts. Only use `agentScope: "p
 - Invalid tool arguments return a clear error message.
 - Unknown agents include the available agent list.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
+- Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
 - Chains stop at the first failed step and return completed step details.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

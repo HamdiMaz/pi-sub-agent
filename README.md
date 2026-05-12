@@ -8,7 +8,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Supports **single**, **parallel**, and **chain** workflows.
 - Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
 - Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
-- Streams progress, usage, tool-call summaries, final Markdown output, and structured result details.
+- Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
 - Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
 - Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB) while preserving full structured details for rendering.
 - Prevents recursive subagent fan-out by removing the `subagent` tool from child allowlists and blocking nested subagent invocations.
@@ -138,7 +138,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Invalid requests return clear guidance and keep structured result details available to the main agent.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
-- Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
+- Failed subagent runs are marked as Pi tool errors without dropping streamed output, subprocess diagnostics, or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
 - Nested `subagent` calls are blocked before spawning another Pi process.
 - Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
@@ -156,6 +156,8 @@ npm run typecheck
 npm run lint
 npm run check
 ```
+
+`npm publish` runs `npm run check` automatically through `prepublishOnly`.
 
 Key files:
 

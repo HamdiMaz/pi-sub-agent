@@ -406,6 +406,28 @@ function formatFailureOutput(result: SingleResult): string {
 	return `Subagent exited with code ${result.exitCode}.`;
 }
 
+function getFailureDiagnostic(result: SingleResult): { label: string; text: string } | undefined {
+	const errorMessage = result.errorMessage?.trim();
+	if (errorMessage) return { label: "Error", text: errorMessage };
+
+	const stderr = result.stderr.trim();
+	if (stderr) return { label: "stderr", text: stderr };
+
+	if (result.stopReason) {
+		return { label: "stopReason", text: `${result.stopReason} (exit code ${result.exitCode})` };
+	}
+
+	if (result.exitCode !== 0) return { label: "Exit code", text: String(result.exitCode) };
+	return undefined;
+}
+
+function formatFailureDiagnostic(result: SingleResult, compact = false): string {
+	const diagnostic = getFailureDiagnostic(result);
+	if (!diagnostic) return "";
+	const text = compact ? diagnostic.text.replace(/\s+/g, " ") : diagnostic.text;
+	return compact ? makePlaceholder(`${diagnostic.label}: ${text}`) : `${diagnostic.label}:\n${text}`;
+}
+
 function snapshotResult(result: SingleResult): SingleResult {
 	return {
 		...result,
@@ -1053,8 +1075,9 @@ export default function (pi: ExtensionAPI): void {
 					if (isRunning) header += ` ${theme.fg("warning", "[running]")}`;
 					if (isError && single.stopReason) header += ` ${theme.fg("error", `[${single.stopReason}]`)}`;
 					container.addChild(new Text(header, 0, 0));
-					if (isError && single.errorMessage) {
-						container.addChild(new Text(theme.fg("error", `Error: ${single.errorMessage}`), 0, 0));
+					const diagnostic = isError ? formatFailureDiagnostic(single) : "";
+					if (diagnostic) {
+						container.addChild(new Text(theme.fg("error", diagnostic), 0, 0));
 					}
 					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
@@ -1083,8 +1106,9 @@ export default function (pi: ExtensionAPI): void {
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold(single.agent))}${theme.fg("muted", ` (${single.agentSource})`)}`;
 				if (isRunning) text += ` ${theme.fg("warning", "[running]")}`;
 				if (isError && single.stopReason) text += ` ${theme.fg("error", `[${single.stopReason}]`)}`;
-				if (isError && single.errorMessage) {
-					text += `\n${theme.fg("error", `Error: ${single.errorMessage}`)}`;
+				const diagnostic = isError ? formatFailureDiagnostic(single, true) : "";
+				if (diagnostic) {
+					text += `\n${theme.fg("error", diagnostic)}`;
 				} else if (displayItems.length === 0) {
 					text += `\n${theme.fg("muted", isRunning ? "(running...)" : "(no output)")}`;
 				} else {
@@ -1109,9 +1133,13 @@ export default function (pi: ExtensionAPI): void {
 						const entryIcon = entryRunning ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 						const displayItems = collectDisplayItems(entry.messages);
 						const finalOutput = collectFinalOutput(entry.messages);
+						const diagnostic = !entryRunning && isTaskError(entry) ? formatFailureDiagnostic(entry) : "";
 						container.addChild(new Spacer(1));
 						container.addChild(new Text(`${theme.fg("muted", `─── Step ${entry.step ?? "?"}: `)}${theme.fg("accent", entry.agent)} ${entryIcon}`, 0, 0));
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", entry.task), 0, 0));
+						if (diagnostic) {
+							container.addChild(new Text(theme.fg("error", diagnostic), 0, 0));
+						}
 						for (const item of displayItems) {
 							if (item.type === "toolCall") {
 								container.addChild(new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
@@ -1138,8 +1166,11 @@ export default function (pi: ExtensionAPI): void {
 				for (const entry of details.results) {
 					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 					const displayItems = collectDisplayItems(entry.messages);
+					const diagnostic = entry.exitCode !== -1 && isTaskError(entry) ? formatFailureDiagnostic(entry, true) : "";
 					text += `\n\n${theme.fg("muted", `─── Step ${entry.step ?? "?"}: `)}${theme.fg("accent", entry.agent)} ${entryIcon}`;
-					if (displayItems.length === 0) {
+					if (diagnostic) {
+						text += `\n${theme.fg("error", diagnostic)}`;
+					} else if (displayItems.length === 0) {
 						text += `\n${theme.fg("muted", entry.exitCode === -1 ? "(running...)" : "(no output)")}`;
 					} else {
 						text += `\n${renderDisplayItems(displayItems, 5)}`;
@@ -1166,9 +1197,13 @@ export default function (pi: ExtensionAPI): void {
 						const entryIcon = isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 						const displayItems = collectDisplayItems(entry.messages);
 						const finalOutput = collectFinalOutput(entry.messages);
+						const diagnostic = isTaskError(entry) ? formatFailureDiagnostic(entry) : "";
 						container.addChild(new Spacer(1));
 						container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", entry.agent)} ${entryIcon}`, 0, 0));
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", entry.task), 0, 0));
+						if (diagnostic) {
+							container.addChild(new Text(theme.fg("error", diagnostic), 0, 0));
+						}
 						for (const item of displayItems) {
 							if (item.type === "toolCall") {
 								container.addChild(new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
@@ -1193,8 +1228,11 @@ export default function (pi: ExtensionAPI): void {
 				for (const entry of details.results) {
 					const entryIcon = entry.exitCode === -1 ? theme.fg("warning", "⏳") : isTaskError(entry) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 					const displayItems = collectDisplayItems(entry.messages);
+					const diagnostic = entry.exitCode !== -1 && isTaskError(entry) ? formatFailureDiagnostic(entry, true) : "";
 					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", entry.agent)} ${entryIcon}`;
-					if (displayItems.length === 0) {
+					if (diagnostic) {
+						text += `\n${theme.fg("error", diagnostic)}`;
+					} else if (displayItems.length === 0) {
 						text += `\n${theme.fg("muted", entry.exitCode === -1 ? "(running...)" : "(no output)")}`;
 					} else {
 						text += `\n${renderDisplayItems(displayItems, 5)}`;

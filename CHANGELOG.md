@@ -36,6 +36,7 @@ All notable changes to this project will be documented in this file.
 - Reduced the bundled `scout` agent to read-only search tools by removing `bash` from its default allowlist.
 - Surfaced single-agent failure details by combining assistant output, subprocess `stderr`, model error messages, stop reasons, exit codes, and unknown-agent guidance in LLM-facing tool output instead of returning a generic failure message.
 - Reported subprocess launch failures with the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
+- Surfaced subprocess stderr/error diagnostics in compact and expanded interactive subagent renderers when failed runs produce no assistant output.
 - Kept single-agent failure diagnostic sections distinct even when their text overlaps with assistant output.
 - Surfaced full chain-step failure diagnostics, including stop reasons without assistant output, instead of returning a generic `(no output)` summary.
 - Skipped agent files with malformed YAML frontmatter so one bad user or project agent definition cannot break subagent discovery.
@@ -59,3 +60,4 @@ All notable changes to this project will be documented in this file.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.
 - Documented malformed-agent skipping, recursive-subagent blocking, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
+- Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.

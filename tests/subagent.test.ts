@@ -685,6 +685,96 @@ test("chain renderer marks model error stop reasons as failed steps", () => {
 	assert.match(rendered.text ?? "", /worker ✗/);
 });
 
+test("subagent renderers surface stderr diagnostics for failed results without assistant output", () => {
+	type Usage = {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		cost: number;
+		contextTokens: number;
+		turns: number;
+	};
+	type Result = {
+		agent: string;
+		agentSource: "extension";
+		task: string;
+		exitCode: number;
+		messages: [];
+		stderr: string;
+		usage: Usage;
+		step?: number;
+	};
+	type ToolRecord = {
+		renderResult?: (
+			result: {
+				content: Array<{ type: "text"; text: string }>;
+				details: {
+					mode: "single" | "parallel" | "chain";
+					agentScope: "user";
+					projectAgentsDir: null;
+					results: Result[];
+				};
+			},
+			options: { expanded: false; isPartial: false },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+	};
+
+	const tools: ToolRecord[] = [];
+	const pi = {
+		on() {},
+		registerTool(tool: ToolRecord) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0];
+	assert.ok(tool?.renderResult);
+
+	const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
+	const failed: Result = {
+		agent: "worker",
+		agentSource: "extension",
+		task: "fail before producing output",
+		exitCode: 23,
+		messages: [],
+		stderr: "child process failed before producing assistant output",
+		usage,
+	};
+	const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+
+	const single = tool.renderResult(
+		{
+			content: [{ type: "text", text: "stderr:\nchild process failed before producing assistant output" }],
+			details: { mode: "single", agentScope: "user", projectAgentsDir: null, results: [failed] },
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+	);
+	assert.match(single.text ?? "", /child process failed/);
+
+	const parallel = tool.renderResult(
+		{
+			content: [{ type: "text", text: "Parallel tasks: 0/1 succeeded" }],
+			details: { mode: "parallel", agentScope: "user", projectAgentsDir: null, results: [failed] },
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+	);
+	assert.match(parallel.text ?? "", /child process failed/);
+
+	const chain = tool.renderResult(
+		{
+			content: [{ type: "text", text: "Chain stopped at step 1" }],
+			details: { mode: "chain", agentScope: "user", projectAgentsDir: null, results: [{ ...failed, step: 1 }] },
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+	);
+	assert.match(chain.text ?? "", /child process failed/);
+});
+
 test("chain mode rejects excessive steps before spawning subprocesses", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: unknown[] } };
@@ -2045,6 +2135,7 @@ test("package manifest declares public Pi package runtime and release metadata",
 	assert.ok(pkg.devDependencies.typebox);
 	assert.ok(pkg.files.includes("CHANGELOG.md"));
 	assert.ok(pkg.scripts.test);
+	assert.equal(pkg.scripts.prepublishOnly, "npm run check");
 	assert.deepEqual(pkg.pi.extensions, ["./extensions/index.ts"]);
 	assert.deepEqual(pkg.pi.prompts, ["./extensions/prompts"]);
 });

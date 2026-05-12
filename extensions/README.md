@@ -80,7 +80,7 @@ System prompt for the agent goes here.
 
 ## Output and rendering
 
-The tool streams partial progress with structured `details` for each subagent result. In interactive mode it renders compact status by default and an expanded view with task text, formatted tool calls, Markdown output, model, token usage, cost, and per-step totals.
+The tool streams partial progress with structured `details` for each subagent result. In interactive mode it renders compact status by default and an expanded view with task text, formatted tool calls, Markdown output, subprocess failure diagnostics, model, token usage, cost, and per-step totals.
 
 Collapsed views use Pi's configured `app.tools.expand` keybinding hint (Ctrl+O by default) instead of hard-coding a shortcut.
 
@@ -102,7 +102,7 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Unknown agents include the available agent list.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
-- Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
+- Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` and stderr/error diagnostics for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
 - Nested `subagent` calls are blocked before spawning another Pi process.
 - Chains are capped at 8 steps, stop at the first failed step, and return diagnostic output plus completed step details.

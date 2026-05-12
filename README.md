@@ -1,74 +1,114 @@
 # pi-sub-agent
 
-A Pi package extension that adds a **subagent** tool for delegating work to specialized agents.
+A Pi package extension that adds a `subagent` tool for delegating work to specialized Pi subprocesses with isolated context windows.
 
-## What it does
+## Highlights
 
-- Discovers agents from:
-  - the extension-local `extensions/agents/*.md` files bundled with this repo (defaults)
-  - `~/.pi/agent/agents/*.md` (`agentScope: "user"`)
-  - project agents from `./.pi/agents/*.md` (`agentScope: "project"` or `"both"`)
-- Supports single task, parallel, and chain execution modes.
-- Streams progress while subagents run.
-- Returns structured tool details for Pi results.
+- Runs each delegated task in a separate `pi --mode json -p --no-session` subprocess.
+- Supports **single**, **parallel**, and **chain** workflows.
+- Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
+- Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
+- Streams progress, usage, tool-call summaries, final Markdown output, and structured result details.
+- Prompts before running project-local agents in interactive/RPC UI sessions.
+- Includes prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
 
-## Files
+## Installation
 
-- `extensions/index.ts` — tool implementation
-- `extensions/agents.ts` — agent discovery and loading
-- `extensions/agents/*.md` — bundled default agents (`scout`, `planner`, `reviewer`, `worker`)
-- `extensions/prompts/*.md` — command prompts (`/implement`, `/scout-and-plan`, `/implement-and-review`)
+After publication:
 
-## Scripts
+```bash
+pi install npm:pi-sub-agent
+```
 
-- `npm run typecheck` — TypeScript check
-- `npm run lint` — ESLint check
-- `npm run check` — both of the above
-
-## Local use
-
-Install dependencies:
+From a local checkout:
 
 ```bash
 npm install
 npm run check
+pi install ./ -l
 ```
 
-Load this extension while testing:
+For one-off testing without installing:
 
 ```bash
 pi -e ./extensions/index.ts
 ```
 
-Install as a local package:
+## Usage
 
-```bash
-pi install ./ -l
-```
-
-## Example usage
-
-Single task:
+Ask Pi to delegate to a bundled or user-defined agent:
 
 ```text
-Use scout to locate all authentication code in this repo
+Use the scout subagent to locate the authentication entry points.
 ```
 
-Chain workflow:
+The tool accepts exactly one mode:
 
 ```json
-{ "chain": [
-  { "agent": "scout", "task": "Find all auth-related files" },
-  { "agent": "planner", "task": "Propose an implementation plan for OAuth support" },
-  { "agent": "worker", "task": "Apply requested auth changes" }
-] }
+{ "agent": "scout", "task": "Find all authentication code" }
 ```
-
-Parallel workflow:
 
 ```json
-{ "tasks": [
-  { "agent": "scout", "task": "Review database models" },
-  { "agent": "planner", "task": "Review CLI entry points" }
-] }
+{
+  "tasks": [
+    { "agent": "scout", "task": "Review database models" },
+    { "agent": "planner", "task": "Review CLI entry points" }
+  ]
+}
 ```
+
+```json
+{
+  "chain": [
+    { "agent": "scout", "task": "Find code relevant to OAuth" },
+    { "agent": "planner", "task": "Plan OAuth support using this context:\n{previous}" },
+    { "agent": "worker", "task": "Implement the plan:\n{previous}" }
+  ]
+}
+```
+
+Parallel mode is limited to 8 tasks total, with up to 4 running at once.
+
+## Agent files
+
+Agents are Markdown files with YAML frontmatter:
+
+```markdown
+---
+name: my-agent
+description: What this agent does
+tools: read, grep, find, ls
+model: claude-haiku-4-5
+---
+
+System prompt for the agent goes here.
+```
+
+Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
+
+| Scope | Loaded agents |
+| --- | --- |
+| `user` (default) | bundled + `~/.pi/agent/agents/*.md` |
+| `project` | bundled + nearest `.pi/agents/*.md` |
+| `both` | bundled + user + nearest project agents |
+
+## Security model
+
+Project-local agents are repository-controlled prompts. They can choose tools and can instruct a subagent to read files, run shell commands, or edit code. Keep `agentScope` at the default `"user"` unless you trust the repository. When UI is available, the extension confirms before running project-local agents unless `confirmProjectAgents: false` is set.
+
+## Development
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run check
+```
+
+Key files:
+
+- `extensions/index.ts` — Pi extension and `subagent` tool implementation.
+- `extensions/agents.ts` — agent discovery and frontmatter loading.
+- `extensions/agents/*.md` — bundled default agents.
+- `extensions/prompts/*.md` — workflow prompt templates.
+- `tests/subagent.test.ts` — regression tests for discovery, Pi tool conventions, and package metadata.

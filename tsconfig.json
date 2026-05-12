@@ -9,8 +9,9 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "types": ["node"],
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["extensions/**/*.ts"],
+  "include": ["extensions/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules"]
 }

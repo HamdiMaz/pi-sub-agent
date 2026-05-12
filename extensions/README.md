@@ -1,165 +1,81 @@
-# Subagent Example
+# Subagent Extension
 
-Delegate tasks to specialized subagents with isolated context windows.
+This directory contains the Pi extension entry point, bundled agents, and workflow prompt templates for `pi-sub-agent`.
 
-## Features
+## What the extension registers
 
-- **Isolated context**: Each subagent runs in a separate `pi` process
-- **Streaming output**: See tool calls and progress as they happen
-- **Parallel streaming**: All parallel tasks stream updates simultaneously
-- **Markdown rendering**: Final output rendered with proper formatting (expanded view)
-- **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
-- **Abort support**: Ctrl+C propagates to kill subagent processes
+- A `subagent` tool for delegating work to isolated Pi subprocesses.
+- Prompt templates from `extensions/prompts/` through the `resources_discover` event.
+- Bundled default agents from `extensions/agents/`.
 
-## Structure
+## Tool modes
 
-```
-subagent/
-├── README.md            # This file
-├── index.ts             # The extension (entry point)
-├── agents.ts            # Agent discovery logic
-├── agents/              # Sample agent definitions
-│   ├── scout.md         # Fast recon, returns compressed context
-│   ├── planner.md       # Creates implementation plans
-│   ├── reviewer.md      # Code review
-│   └── worker.md        # General-purpose (full capabilities)
-└── prompts/             # Workflow presets (prompt templates)
-    ├── implement.md     # scout -> planner -> worker
-    ├── scout-and-plan.md    # scout -> planner (no implementation)
-    └── implement-and-review.md  # worker -> reviewer -> worker
-```
+| Mode | Parameters | Behavior |
+| --- | --- | --- |
+| Single | `{ agent, task }` | Runs one agent for one task. |
+| Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
+| Chain | `{ chain: [...] }` | Runs steps sequentially; `{previous}` is replaced with prior output. |
 
-## Loading this extension
+Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, model, tool allowlist, and working directory.
 
-From this repository:
+## Agent discovery
 
-```bash
-pi -e ./extensions/index.ts
-```
+Bundled agents are always available. `agentScope` controls additional locations:
 
-Or install as a local package:
+| `agentScope` | Loaded sources |
+| --- | --- |
+| `user` (default) | bundled agents + `~/.pi/agent/agents/*.md` |
+| `project` | bundled agents + nearest `.pi/agents/*.md` |
+| `both` | bundled agents + user agents + nearest project agents |
 
-```bash
-pi install . -l
-```
+When two agents share the same `name`, later sources override earlier ones: bundled < user < project.
 
-This extension bundles its default agents in `extensions/agents/*.md` and workflow prompts in `extensions/prompts/*.md`.
-
-## Security Model
-
-This tool executes a separate `pi` subprocess with a delegated system prompt and tool/model configuration.
-
-**Project-local agents** (`.pi/agents/*.md`) are repo-controlled prompts that can instruct the model to read files, run bash commands, etc.
-
-**Default behavior:** Loads bundled extension agents plus **user-level agents** from `~/.pi/agent/agents`.
-
-To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only do this for repositories you trust.
-
-When running interactively, the tool prompts for confirmation before running project-local agents. Set `confirmProjectAgents: false` to disable.
-
-## Usage
-
-### Single agent
-```
-Use scout to find all authentication code
-```
-
-### Parallel execution
-```
-Run 2 scouts in parallel: one to find models, one to find providers
-```
-
-### Chained workflow
-```
-Use a chain: first have scout find the read tool, then have planner suggest improvements
-```
-
-### Workflow prompts
-```
-/implement add Redis caching to the session store
-/scout-and-plan refactor auth to support OAuth
-/implement-and-review add input validation to API endpoints
-```
-
-## Tool Modes
-
-| Mode | Parameter | Description |
-|------|-----------|-------------|
-| Single | `{ agent, task }` | One agent, one task |
-| Parallel | `{ tasks: [...] }` | Multiple agents run concurrently (max 8, 4 concurrent) |
-| Chain | `{ chain: [...] }` | Sequential with `{previous}` placeholder |
-
-## Output Display
-
-**Collapsed view** (default):
-- Status icon (✓/✗/⏳) and agent name
-- Last 5-10 items (tool calls and text)
-- Usage stats: `3 turns ↑input ↓output RcacheRead WcacheWrite $cost ctx:contextTokens model`
-
-**Expanded view** (Ctrl+O):
-- Full task text
-- All tool calls with formatted arguments
-- Final output rendered as Markdown
-- Per-task usage (for chain/parallel)
-
-**Parallel mode streaming**:
-- Shows all tasks with live status (⏳ running, ✓ done, ✗ failed)
-- Updates as each task makes progress
-- Shows "2/3 done, 1 running" status
-
-**Tool call formatting** (mimics built-in tools):
-- `$ command` for bash
-- `read ~/path:1-10` for read
-- `grep /pattern/ in ~/path` for grep
-- etc.
-
-## Agent Definitions
-
-Agents are markdown files with YAML frontmatter:
+## Agent definition format
 
 ```markdown
 ---
-name: my-agent
-description: What this agent does
-tools: read, grep, find, ls
-model: claude-haiku-4-5
+name: reviewer
+description: Code review specialist for quality and security analysis
+tools: read, grep, find, ls, bash
+model: claude-sonnet-4-5
 ---
 
 System prompt for the agent goes here.
 ```
 
-**Locations:**
-- `~/.pi/agent/agents/*.md` - User-level (always loaded)
-- `.pi/agents/*.md` - Project-level (only with `agentScope: "project"` or `"both"`)
+- `name` and `description` are required.
+- `tools` is optional; omit it to use Pi's default active tools.
+- `model` is optional; omit it to use the current/default Pi model.
 
-Project agents override user agents with the same name when `agentScope: "both"`.
+## Bundled agents
 
-## Sample Agents
+| Agent | Purpose | Tools |
+| --- | --- | --- |
+| `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls`, `bash` |
+| `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
+| `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
+| `worker` | General-purpose implementation in an isolated context. | Pi defaults |
 
-| Agent | Purpose | Model | Tools |
-|-------|---------|-------|-------|
-| `scout` | Fast codebase recon | Haiku | read, grep, find, ls, bash |
-| `planner` | Implementation plans | Sonnet | read, grep, find, ls |
-| `reviewer` | Code review | Sonnet | read, grep, find, ls, bash |
-| `worker` | General-purpose | Sonnet | (all default) |
-
-## Workflow Prompts
+## Workflow prompt templates
 
 | Prompt | Flow |
-|--------|------|
-| `/implement <query>` | scout → planner → worker |
-| `/scout-and-plan <query>` | scout → planner |
-| `/implement-and-review <query>` | worker → reviewer → worker |
+| --- | --- |
+| `/implement <request>` | `scout` → `planner` → `worker` |
+| `/scout-and-plan <request>` | `scout` → `planner` |
+| `/implement-and-review <request>` | `worker` → `reviewer` → `worker` |
 
-## Error Handling
+## Output and rendering
 
-- **Exit code != 0**: Tool returns error with stderr/output
-- **stopReason "error"**: LLM error propagated with error message
-- **stopReason "aborted"**: User abort (Ctrl+C) kills subprocess, throws error
-- **Chain mode**: Stops at first failing step, reports which step failed
+The tool streams partial progress with structured `details` for each subagent result. In interactive mode it renders compact status by default and an expanded view with task text, formatted tool calls, Markdown output, model, token usage, cost, and per-step totals.
 
-## Limitations
+## Security notes
 
-- Output truncated to last 10 items in collapsed view (expand to see all)
-- Agents discovered fresh on each invocation (allows editing mid-session)
-- Parallel mode limited to 8 tasks, 4 concurrent
+Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. When UI is available, the extension asks for confirmation before running project-local agents unless `confirmProjectAgents: false` is set.
+
+## Error handling
+
+- Invalid tool arguments return a clear error message.
+- Unknown agents include the available agent list.
+- Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
+- Chains stop at the first failed step and return completed step details.
+- Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

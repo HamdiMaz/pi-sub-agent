@@ -23,3 +23,9 @@ All notable changes to this project will be documented in this file.
 ### Chores
 
 - Added ignore rules for generated and local-only files, including `node_modules/`, `dist/`, `coverage/`, logs, environment files, and `.pi/`.
+- Added an automated `npm test` suite for agent discovery precedence, Pi tool registration conventions, package release metadata, and streaming update state.
+- Expanded TypeScript checking to cover the test suite.
+- Added custom `subagent` prompt snippets, prompt guidelines, and interactive tool renderers for compact/expanded subagent output.
+- Fixed streaming update snapshots so active subprocesses stay marked as running until their final exit code is known.
+- Switched `agentScope` to a Google-compatible `StringEnum` schema and declared Pi runtime imports as peer dependencies.
+- Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development workflows.

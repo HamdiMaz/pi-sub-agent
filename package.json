@@ -1,0 +1,40 @@
+{
+  "name": "pi-sub-agent",
+  "version": "0.1.0",
+  "description": "A Pi package extension that provides sub-agent functionality.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Hamdi Alareij",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "sub-agent",
+    "agent"
+  ],
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.7.0",
+    "eslint": "^10.3.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3"
+  }
+}

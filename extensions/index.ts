@@ -556,7 +556,13 @@ async function runSingleAgent(
 				}
 				resolve(code ?? 0);
 			});
-			proc.on("error", () => resolve(1));
+			proc.on("error", (error) => {
+				const detail = error instanceof Error ? error.message : String(error);
+				const diagnostic = `Failed to start subagent process (${invocation.command}): ${detail}`;
+				result.stderr = result.stderr ? `${result.stderr}\n${diagnostic}` : diagnostic;
+				result.errorMessage = diagnostic;
+				resolve(1);
+			});
 		});
 
 		result.exitCode = exitCode;
@@ -594,7 +600,7 @@ async function runSingleAgent(
 		}
 	}
 
-	if (result.exitCode !== 0 && result.errorMessage) {
+	if (result.exitCode !== 0 && result.errorMessage && !result.stderr.includes(result.errorMessage)) {
 		result.stderr = result.stderr ? `${result.stderr}\n${result.errorMessage}` : result.errorMessage;
 	}
 

@@ -96,6 +96,7 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Invalid tool arguments return a clear error message.
 - Unknown agents include the available agent list.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
+- Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
 - Chains stop at the first failed step and return completed step details.

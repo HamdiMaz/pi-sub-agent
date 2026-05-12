@@ -130,10 +130,15 @@ The text returned to the main model is truncated from the tail at Pi's default t
 
 - Invalid requests return clear guidance and keep structured result details available to the main agent.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
+- Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
 - Chain mode stops at the first failed step; parallel mode reports per-task success and failure counts.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
+
+## Troubleshooting
+
+If a subagent fails with `Failed to start subagent process (pi): ...`, make sure the `pi` executable is available to the parent Pi process. This is normally automatic when running through the installed Pi CLI. For custom wrappers or local development, either launch Pi through its normal executable or ensure `pi` is on `PATH` before invoking the extension.
 
 ## Development
 

@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - Removed provider-specific model pins from bundled agents so subagents inherit the active parent Pi model and thinking level unless a custom agent explicitly sets `model`.
 - Reduced the bundled `scout` agent to read-only search tools by removing `bash` from its default allowlist.
 - Surfaced single-agent failure details by combining assistant output, subprocess `stderr`, model error messages, stop reasons, exit codes, and unknown-agent guidance in LLM-facing tool output instead of returning a generic failure message.
+- Reported subprocess launch failures with the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Kept single-agent failure diagnostic sections distinct even when their text overlaps with assistant output.
 
 ### Chores
@@ -48,7 +49,7 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint and bundled workflow prompts in the Pi package manifest so Pi can discover package resources without treating helper modules as extensions.
 - Added `argument-hint` metadata to bundled workflow prompt templates for clearer slash-command autocomplete.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, single-agent failure output, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model inheritance, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, single-agent failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints and parallel task item limits for clearer model-facing metadata.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.

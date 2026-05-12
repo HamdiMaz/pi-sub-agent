@@ -14,7 +14,7 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 | --- | --- | --- |
 | Single | `{ agent, task }` | Runs one agent for one task. |
 | Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
-| Chain | `{ chain: [...] }` | Runs steps sequentially; `{previous}` is replaced with prior output. |
+| Chain | `{ chain: [...] }` | Runs up to 8 steps sequentially; `{previous}` is replaced with prior output. |
 
 Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. Tool access is capped by the parent Pi session's active tool allowlist; agent-level `tools` entries can narrow that list but cannot re-enable disabled parent tools. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
 
@@ -24,7 +24,7 @@ Each subagent runs `pi --mode json -p --no-session` with the selected agent's sy
 | --- | --- | --- |
 | `agent` + `task` | Single | Run one named agent with one task. |
 | `tasks` | Parallel | Array of `{ agent, task, cwd? }`; maximum 8 tasks and 4 concurrent subprocesses. |
-| `chain` | Chain | Array of `{ agent, task, cwd? }`; `{previous}` is replaced with prior output. |
+| `chain` | Chain | Array of `{ agent, task, cwd? }`, maximum 8; `{previous}` is replaced with prior output. |
 | `agentScope` | All | `"user"` by default; use `"project"` or `"both"` only for trusted repositories. |
 | `confirmProjectAgents` | All | Defaults to `true`; prompts when UI is available and blocks project-local agents in non-interactive runs unless explicitly set to `false`. |
 | `cwd` | Single | Default working directory override for the subprocess. |
@@ -99,5 +99,5 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
-- Chains stop at the first failed step and return diagnostic output plus completed step details.
+- Chains are capped at 8 steps, stop at the first failed step, and return diagnostic output plus completed step details.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

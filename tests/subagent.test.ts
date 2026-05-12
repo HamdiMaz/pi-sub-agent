@@ -175,6 +175,7 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 				};
 				chain?: {
 					minItems?: unknown;
+					maxItems?: unknown;
 					items?: {
 						properties?: {
 							agent?: { minLength?: unknown };
@@ -240,6 +241,7 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.minItems, 1);
+	assert.equal(tool.parameters?.properties?.chain?.maxItems, 8);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.cwd?.minLength, 1);
@@ -676,6 +678,47 @@ test("chain renderer marks model error stop reasons as failed steps", () => {
 
 	assert.match(rendered.text ?? "", /chain 0\/1 steps/);
 	assert.match(rendered.text ?? "", /worker ✗/);
+});
+
+test("chain mode rejects excessive steps before spawning subprocesses", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: unknown[] } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { chain: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const chain = Array.from({ length: 9 }, (_, index) => ({
+			agent: "worker",
+			task: `step ${index + 1}`,
+		}));
+		const result = await tool.execute(
+			"tool-call-1",
+			{ chain, agentScope: "user" },
+			undefined,
+			undefined,
+			{ cwd: dir, hasUI: false },
+		);
+
+		assert.match(result.content[0]?.text ?? "", /Too many chain steps; max is 8/);
+		assert.deepEqual(result.details.results, []);
+	});
 });
 
 test("parallel mode treats model error stop reasons as failed tasks", async () => {

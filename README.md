@@ -75,7 +75,7 @@ The tool accepts exactly one mode:
 }
 ```
 
-Parallel mode is limited to 8 tasks total, with up to 4 running at once.
+Parallel mode is limited to 8 tasks total, with up to 4 running at once. Chain mode is limited to 8 sequential steps.
 
 ### Tool parameters
 
@@ -84,7 +84,7 @@ Parallel mode is limited to 8 tasks total, with up to 4 running at once.
 | `agent` | Single | Agent name to run. Use with `task`. |
 | `task` | Single | Task text passed to the selected agent. Use with `agent`. |
 | `tasks` | Parallel | Array of `{ agent, task, cwd? }` items. |
-| `chain` | Chain | Array of `{ agent, task, cwd? }` steps. `{previous}` is replaced with the prior step's final output. |
+| `chain` | Chain | Array of `{ agent, task, cwd? }` steps, maximum 8. `{previous}` is replaced with the prior step's final output. |
 | `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. Bundled agents are always available. |
 | `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. In non-interactive runs, project-local agents are blocked unless this is explicitly set to `false`. |
 | `cwd` | Single | Working directory override for the single-agent subprocess. |
@@ -133,7 +133,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
-- Chain mode stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
+- Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 
 ## Troubleshooting

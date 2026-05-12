@@ -27,6 +27,7 @@ import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const MAX_PARALLEL_TASKS = 8;
+const MAX_CHAIN_STEPS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 
@@ -654,7 +655,7 @@ const SubagentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Single mode agent name", minLength: 1 })),
 	task: Type.Optional(Type.String({ description: "Single mode task text", minLength: 1 })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list", minItems: 1, maxItems: MAX_PARALLEL_TASKS })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1 })),
+	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1, maxItems: MAX_CHAIN_STEPS })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents", default: true })),
 	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode", minLength: 1 })),
@@ -673,7 +674,7 @@ export default function (pi: ExtensionAPI): void {
 		label: "Subagent",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
-			"Supports single, parallel, and chain flows.",
+			`Supports single, parallel, and chain flows; parallel mode is capped at ${MAX_PARALLEL_TASKS} tasks and chain mode at ${MAX_CHAIN_STEPS} steps.`,
 			`LLM-facing output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
 			'Bundled default agents are always available; user agents are used by default from ~/.pi/agent/agents.',
 			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
@@ -681,6 +682,7 @@ export default function (pi: ExtensionAPI): void {
 		promptSnippet: "Delegate work to specialized subagents in isolated Pi processes; supports single, parallel, and chain workflows.",
 		promptGuidelines: [
 			"Use subagent when a task benefits from isolated context, parallel research, or specialized bundled/user/project agents.",
+			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,
 			'Use subagent with agentScope "project" or "both" only for trusted repositories because project agents are repo-controlled prompts.',
 			"Use subagent chain tasks with {previous} only when each step should consume the previous agent output.",
 		],
@@ -758,6 +760,15 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			if (hasChain && params.chain) {
+				if (params.chain.length > MAX_CHAIN_STEPS) {
+					return {
+						content: [
+							{ type: "text", text: `Too many chain steps; max is ${MAX_CHAIN_STEPS}.` },
+						],
+						details: makeDetails("chain")([]),
+					};
+				}
+
 				const results: SingleResult[] = [];
 				let previous = "";
 				for (let i = 0; i < params.chain.length; i++) {

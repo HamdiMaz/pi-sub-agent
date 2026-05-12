@@ -53,6 +53,6 @@ All notable changes to this project will be documented in this file.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
 - Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model/tool inheritance, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, single-agent and chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
-- Tightened the `subagent` tool schema with non-empty string constraints and parallel task item limits for clearer model-facing metadata.
+- Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.

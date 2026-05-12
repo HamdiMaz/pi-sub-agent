@@ -122,7 +122,7 @@ test("discovers extension, user, and nearest project agents with documented prec
 	});
 });
 
-test("discovers agents with YAML list tools and skips invalid frontmatter without throwing", async () => {
+test("discovers agents with YAML list tools and skips invalid or malformed frontmatter without throwing", async () => {
 	await withTempDir(async (dir) => {
 		const extensionAgentsDir = join(dir, "extension-agents");
 		await mkdir(extensionAgentsDir, { recursive: true });
@@ -134,6 +134,11 @@ test("discovers agents with YAML list tools and skips invalid frontmatter withou
 		await writeFile(
 			join(extensionAgentsDir, "invalid.md"),
 			`---\nname: invalid\ndescription:\n  nested: value\ntools:\n  - read\n---\n\nInvalid metadata should be ignored\n`,
+			"utf8",
+		);
+		await writeFile(
+			join(extensionAgentsDir, "malformed.md"),
+			`---\nname: malformed\ndescription: [unterminated\n---\n\nMalformed YAML should be ignored\n`,
 			"utf8",
 		);
 

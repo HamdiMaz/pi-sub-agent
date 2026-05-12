@@ -59,6 +59,7 @@ System prompt for the agent goes here.
 - `name` and `description` are required.
 - `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent.
 - `model` is optional; omit it to inherit the active parent Pi model and thinking level.
+- Agent files with unreadable content, missing required metadata, invalid metadata types, or malformed YAML frontmatter are skipped.
 
 ## Bundled agents
 
@@ -88,6 +89,8 @@ LLM-facing tool content is truncated from the tail at Pi's default limits (2,000
 ## Security notes
 
 Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. Agent tool lists are still capped by the parent session's active tools, but enabled tools can still read, run commands, or edit files under the agent prompt's direction. With the default `confirmProjectAgents: true`, the extension asks for confirmation before running project-local agents when UI is available and cancels in non-interactive runs. Set `confirmProjectAgents: false` only after reviewing and trusting the project agents.
+
+Subagents run as normal child `pi` invocations in the selected `cwd`, so Pi packages/extensions enabled for that working directory still use Pi's standard package security model. Install only trusted Pi packages and avoid `cwd` overrides into repositories whose Pi configuration you have not reviewed.
 
 Delegated task text is passed to the child Pi process over stdin rather than as an argv value, reducing process-list exposure and avoiding OS argument-length failures for large chained handoffs.
 

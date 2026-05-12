@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Reported subprocess launch failures with the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Kept single-agent failure diagnostic sections distinct even when their text overlaps with assistant output.
 - Surfaced full chain-step failure diagnostics, including stop reasons without assistant output, instead of returning a generic `(no output)` summary.
+- Skipped agent files with malformed YAML frontmatter so one bad user or project agent definition cannot break subagent discovery.
 
 ### Chores
 
@@ -55,4 +56,5 @@ All notable changes to this project will be documented in this file.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.
+- Documented malformed-agent skipping and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.

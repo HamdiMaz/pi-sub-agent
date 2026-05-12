@@ -61,7 +61,14 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+		let parsed: { frontmatter: Record<string, unknown>; body: string };
+		try {
+			parsed = parseFrontmatter<Record<string, unknown>>(content);
+		} catch {
+			continue;
+		}
+
+		const { frontmatter, body } = parsed;
 		const name = frontmatterString(frontmatter.name);
 		const description = frontmatterString(frontmatter.description);
 

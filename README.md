@@ -110,6 +110,8 @@ Discovery order is bundled extension agents first, then user agents, then projec
 
 `tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
 
+Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
+
 | Scope | Loaded agents |
 | --- | --- |
 | `user` (default) | bundled + `~/.pi/agent/agents/*.md` |
@@ -119,6 +121,8 @@ Discovery order is bundled extension agents first, then user agents, then projec
 ## Security model
 
 Project-local agents are repository-controlled prompts. They can request tools within the parent session's active tool allowlist and can instruct a subagent to read files, run shell commands, or edit code when those tools remain enabled. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
+
+Each subagent is a normal child `pi` invocation in the selected `cwd`, so Pi packages and extensions enabled for that working directory still follow Pi's standard package security model. Install only trusted Pi packages and avoid `cwd` overrides into repositories whose Pi configuration you have not reviewed.
 
 Delegated task text is written to the child Pi process over stdin instead of being appended to command-line arguments, reducing process-list exposure and avoiding OS argument-length limits during large chain handoffs.
 

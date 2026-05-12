@@ -18,6 +18,8 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 
 Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, model, tool allowlist, and working directory.
 
+`cwd` overrides are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
+
 ## Agent discovery
 
 Bundled agents are always available. `agentScope` controls additional locations:
@@ -67,6 +69,8 @@ System prompt for the agent goes here.
 ## Output and rendering
 
 The tool streams partial progress with structured `details` for each subagent result. In interactive mode it renders compact status by default and an expanded view with task text, formatted tool calls, Markdown output, model, token usage, cost, and per-step totals.
+
+LLM-facing tool content is truncated from the tail at Pi's default limits (2,000 lines / 50KB) to protect the parent context. Full subagent messages remain in `details` for expanded rendering and follow-up analysis.
 
 ## Security notes
 

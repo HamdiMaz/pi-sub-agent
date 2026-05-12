@@ -7,12 +7,19 @@
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	getMarkdownTheme,
+	truncateTail,
+	withFileMutationQueue,
+} from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
@@ -281,6 +288,24 @@ function makePlaceholder(text = ""): string {
 	return text.length > 120 ? `${text.slice(0, 120)}...` : text;
 }
 
+function resolveSubagentCwd(defaultCwd: string, cwd: string | undefined): string {
+	if (!cwd) return defaultCwd;
+	const normalized = cwd.startsWith("@") ? cwd.slice(1) : cwd;
+	return isAbsolute(normalized) ? normalized : resolve(defaultCwd, normalized);
+}
+
+function truncateForToolContent(text: string): string {
+	const truncation = truncateTail(text, {
+		maxLines: DEFAULT_MAX_LINES,
+		maxBytes: DEFAULT_MAX_BYTES,
+	});
+	if (!truncation.truncated) return truncation.content;
+	return [
+		truncation.content,
+		`[Subagent output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Expand the tool result for full structured details.]`,
+	].filter(Boolean).join("\n\n");
+}
+
 async function mapWithConcurrencyLimit<TIn, TOut>(
 	items: TIn[],
 	concurrency: number,
@@ -397,8 +422,9 @@ async function runSingleAgent(
 
 	const emitUpdate = () => {
 		if (!onUpdate) return;
+		const output = collectFinalOutput(result.messages);
 		onUpdate({
-			content: [{ type: "text", text: collectFinalOutput(result.messages) || "(running...)" }],
+			content: [{ type: "text", text: output ? truncateForToolContent(output) : "(running...)" }],
 			details: makeDetails([snapshotResult(result)]),
 		});
 	};
@@ -416,7 +442,7 @@ async function runSingleAgent(
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
 			const proc = spawn(invocation.command, invocation.args, {
-				cwd: cwd ?? defaultCwd,
+				cwd: resolveSubagentCwd(defaultCwd, cwd),
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
@@ -580,6 +606,7 @@ export default function (pi: ExtensionAPI): void {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Supports single, parallel, and chain flows.",
+			`LLM-facing output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
 			'Bundled default agents are always available; user agents are used by default from ~/.pi/agent/agents.',
 			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
 		].join(" "),
@@ -696,7 +723,7 @@ export default function (pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text: collectFinalOutput(results.at(-1)?.messages ?? []) || "(no output)",
+							text: truncateForToolContent(collectFinalOutput(results.at(-1)?.messages ?? []) || "(no output)"),
 						},
 					],
 					details: makeDetails("chain")(results),
@@ -788,14 +815,14 @@ export default function (pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text: result.errorMessage || collectFinalOutput(result.messages) || "Subagent failed",
+								text: truncateForToolContent(result.errorMessage || collectFinalOutput(result.messages) || "Subagent failed"),
 							},
 						],
 						details: makeDetails("single")([result]),
 					};
 				}
 				return {
-					content: [{ type: "text", text: collectFinalOutput(result.messages) || "(no output)" }],
+					content: [{ type: "text", text: truncateForToolContent(collectFinalOutput(result.messages) || "(no output)") }],
 					details: makeDetails("single")([result]),
 				};
 			}

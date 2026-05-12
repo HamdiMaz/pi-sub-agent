@@ -59,20 +59,20 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"
 			.map((t: string) => t.trim())
 			.filter(Boolean);
 
-			const agent: AgentConfig = {
-				name: frontmatter.name,
-				description: frontmatter.description,
-				systemPrompt: body,
-				source,
-				filePath,
-			};
-			if (tools?.length) {
-				agent.tools = tools;
-			}
-			if (frontmatter.model) {
-				agent.model = frontmatter.model;
-			}
-			agents.push(agent);
+		const agent: AgentConfig = {
+			name: frontmatter.name,
+			description: frontmatter.description,
+			systemPrompt: body,
+			source,
+			filePath,
+		};
+		if (tools?.length) {
+			agent.tools = tools;
+		}
+		if (frontmatter.model) {
+			agent.model = frontmatter.model;
+		}
+		agents.push(agent);
 	}
 
 	return agents;
@@ -118,7 +118,6 @@ export function discoverAgents(cwd: string, scope: AgentScope, extensionAgentsDi
 
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
 }
-
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {
 	if (agents.length === 0) return { text: "none", remaining: 0 };

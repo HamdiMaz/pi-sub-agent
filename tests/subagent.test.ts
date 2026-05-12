@@ -107,6 +107,7 @@ test("discovers extension, user, and nearest project agents with documented prec
 test("registers a Pi-conventional subagent tool and bundled prompt resources", () => {
 	type ToolRecord = {
 		name?: unknown;
+		description?: unknown;
 		promptSnippet?: unknown;
 		promptGuidelines?: unknown;
 		renderCall?: unknown;
@@ -149,6 +150,7 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	const tool = tools[0];
 	assert.ok(tool);
 	assert.equal(tool.name, "subagent");
+	assert.match(String(tool.description), /truncated/i);
 	const promptSnippet = tool.promptSnippet;
 	if (typeof promptSnippet !== "string") assert.fail("Expected promptSnippet to be a string");
 	assert.match(promptSnippet, /single, parallel, and chain/i);
@@ -503,6 +505,128 @@ test("parallel mode treats model error stop reasons as failed tasks", async () =
 	});
 });
 
+test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefixes", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; cwd: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		const packageDir = join(projectDir, "packages", "app");
+		await mkdir(packageDir, { recursive: true });
+
+		const fakePi = join(dir, "fake-pi-cwd.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: process.cwd() }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "print cwd", cwd: "@packages/app", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+
+			assert.equal(result.content[0]?.text, packageDir);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("single-agent results truncate LLM-facing content while retaining full details", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: {
+				results: Array<{
+					messages: Array<{ content?: Array<{ type: string; text: string }> }>;
+				}>;
+			};
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const longOutput = "final-output\n" + "x".repeat(60_000);
+		const fakePi = join(dir, "fake-pi-long-output.mjs");
+		await writeFile(
+			fakePi,
+			`const longOutput = ${JSON.stringify(longOutput)};\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: longOutput }], usage: { input: 1, output: 1, totalTokens: 2, cost: { total: 0 } }, model: "test-model", stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "produce long output", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			const text = result.content[0]?.text ?? "";
+			assert.match(text, /Subagent output truncated/i);
+			assert.ok(text.length < longOutput.length, `expected ${text.length} to be shorter than ${longOutput.length}`);
+			assert.equal(result.details.results[0]?.messages[0]?.content?.[0]?.text, longOutput);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("package manifest declares public Pi package runtime and release metadata", async () => {
 	const pkg = JSON.parse(await readFile("package.json", "utf8"));
 
@@ -516,4 +640,5 @@ test("package manifest declares public Pi package runtime and release metadata",
 	assert.ok(pkg.files.includes("CHANGELOG.md"));
 	assert.ok(pkg.scripts.test);
 	assert.deepEqual(pkg.pi.extensions, ["./extensions"]);
+	assert.deepEqual(pkg.pi.prompts, ["./extensions/prompts"]);
 });

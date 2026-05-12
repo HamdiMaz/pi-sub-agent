@@ -4,7 +4,7 @@
   "description": "A Pi package extension that provides sub-agent functionality.",
   "type": "module",
   "license": "MIT",
-  "author": "Hamdi Alareij",
+  "author": "Maz Li",
   "keywords": [
     "pi-package",
     "pi-extension",

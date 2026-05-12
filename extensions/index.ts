@@ -17,6 +17,7 @@ import {
 	DEFAULT_MAX_LINES,
 	formatSize,
 	getMarkdownTheme,
+	keyText,
 	truncateTail,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
@@ -306,6 +307,11 @@ function truncateForToolContent(text: string): string {
 	].filter(Boolean).join("\n\n");
 }
 
+function expandToolOutputHint(theme: { fg: (color: ThemeColor, text: string) => string }): string {
+	const expandKey = keyText("app.tools.expand") || "ctrl+o";
+	return `(${theme.fg("dim", expandKey)}${theme.fg("muted", " to expand")})`;
+}
+
 async function mapWithConcurrencyLimit<TIn, TOut>(
 	items: TIn[],
 	concurrency: number,
@@ -448,6 +454,8 @@ async function runSingleAgent(
 			});
 
 			let buffer = "";
+			let closed = false;
+			let killTimer: ReturnType<typeof setTimeout> | undefined;
 			const parseLine = (line: string): void => {
 				const trimmed = line.trim();
 				if (!trimmed) return;
@@ -496,8 +504,8 @@ async function runSingleAgent(
 				if (aborted) return;
 				aborted = true;
 				proc.kill("SIGTERM");
-				setTimeout(() => {
-					if (!proc.killed) proc.kill("SIGKILL");
+				killTimer = setTimeout(() => {
+					if (!closed) proc.kill("SIGKILL");
 				}, 5000);
 			};
 
@@ -511,6 +519,11 @@ async function runSingleAgent(
 			}
 
 			proc.on("close", (code) => {
+				closed = true;
+				if (killTimer) {
+					clearTimeout(killTimer);
+					killTimer = undefined;
+				}
 				if (buffer.trim()) parseLine(buffer);
 				if (signal && abortListener) {
 					signal.removeEventListener("abort", abortListener);
@@ -956,7 +969,7 @@ export default function (pi: ExtensionAPI): void {
 					text += `\n${theme.fg("muted", isRunning ? "(running...)" : "(no output)")}`;
 				} else {
 					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`;
-					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${expandToolOutputHint(theme)}`;
 				}
 				const usage = formatUsageStats(single.usage, single.model);
 				if (usage) text += `\n${theme.fg("dim", usage)}`;
@@ -1014,7 +1027,7 @@ export default function (pi: ExtensionAPI): void {
 				}
 				const totalUsage = formatAggregateUsageStats(details.results);
 				if (totalUsage) text += `\n\n${theme.fg("dim", `Total: ${totalUsage}`)}`;
-				text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+				text += `\n${expandToolOutputHint(theme)}`;
 				return new Text(text, 0, 0);
 			}
 
@@ -1071,7 +1084,7 @@ export default function (pi: ExtensionAPI): void {
 					const totalUsage = formatAggregateUsageStats(details.results);
 					if (totalUsage) text += `\n\n${theme.fg("dim", `Total: ${totalUsage}`)}`;
 				}
-				if (!expanded) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+				if (!expanded) text += `\n${expandToolOutputHint(theme)}`;
 				return new Text(text, 0, 0);
 			}
 

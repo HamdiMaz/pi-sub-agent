@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - Added an explicit `confirmProjectAgents: true` schema default so model-facing tool metadata matches the documented security behavior.
 - Truncated LLM-facing subagent output with Pi's default tool limits while preserving full structured result details for rendering and follow-up analysis.
 - Resolved subagent `cwd` overrides relative to the parent Pi working directory and accepted leading `@` path prefixes.
+- Fixed abort escalation for subagent subprocesses that ignore `SIGTERM` by tracking process close state before sending `SIGKILL`.
+- Replaced hard-coded expand shortcut text in subagent renderers with Pi keybinding-aware hints.
 
 ### Chores
 
@@ -36,3 +38,5 @@ All notable changes to this project will be documented in this file.
 - Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development workflows.
 - Declared bundled workflow prompts in the Pi package manifest so Pi can discover them as package prompt resources.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
+- Added regression coverage for abort escalation and keybinding-aware renderer hints.
+- Expanded public and extension documentation with requirements, parameter references, rendering behavior, and abort semantics.

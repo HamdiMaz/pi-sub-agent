@@ -18,6 +18,17 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 
 Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, model, tool allowlist, and working directory.
 
+### Parameter reference
+
+| Field | Applies to | Notes |
+| --- | --- | --- |
+| `agent` + `task` | Single | Run one named agent with one task. |
+| `tasks` | Parallel | Array of `{ agent, task, cwd? }`; maximum 8 tasks and 4 concurrent subprocesses. |
+| `chain` | Chain | Array of `{ agent, task, cwd? }`; `{previous}` is replaced with prior output. |
+| `agentScope` | All | `"user"` by default; use `"project"` or `"both"` only for trusted repositories. |
+| `confirmProjectAgents` | All | Defaults to `true` and prompts when project-local agents are selected and UI is available. |
+| `cwd` | Single | Default working directory override for the subprocess. |
+
 `cwd` overrides are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
 
 ## Agent discovery
@@ -69,6 +80,8 @@ System prompt for the agent goes here.
 ## Output and rendering
 
 The tool streams partial progress with structured `details` for each subagent result. In interactive mode it renders compact status by default and an expanded view with task text, formatted tool calls, Markdown output, model, token usage, cost, and per-step totals.
+
+Collapsed views use Pi's configured `app.tools.expand` keybinding hint (Ctrl+O by default) instead of hard-coding a shortcut.
 
 LLM-facing tool content is truncated from the tail at Pi's default limits (2,000 lines / 50KB) to protect the parent context. Full subagent messages remain in `details` for expanded rendering and follow-up analysis.
 

@@ -298,6 +298,152 @@ test("subagent updates mark active subprocesses as running until they close", as
 	});
 });
 
+test("aborted subagents escalate to SIGKILL when SIGTERM is ignored", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { details: { results: Array<{ exitCode: number; stopReason?: string }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-ignore-term.mjs");
+		await writeFile(
+			fakePi,
+			`process.on("SIGTERM", () => { console.error("ignored SIGTERM"); });\n` +
+				`setTimeout(() => process.exit(42), 1500);\n` +
+				`setInterval(() => undefined, 100);\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		const originalSetTimeout = globalThis.setTimeout;
+		const shortenedSetTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: Parameters<typeof setTimeout>[1]) =>
+			originalSetTimeout(handler, timeout === 5000 ? 20 : timeout)) as unknown as typeof setTimeout;
+		process.argv[1] = fakePi;
+		globalThis.setTimeout = shortenedSetTimeout;
+		try {
+			const controller = new AbortController();
+			const runPromise = tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "wait until aborted", agentScope: "user" },
+				controller.signal,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+			await new Promise<void>((resolve) => {
+				originalSetTimeout(() => resolve(), 100);
+			});
+			controller.abort();
+
+			const timeout = new Promise<"timeout">((resolve) => {
+				originalSetTimeout(() => resolve("timeout"), 500);
+			});
+			const completed = await Promise.race([runPromise, timeout]);
+
+			assert.notEqual(completed, "timeout", "subagent did not exit after abort escalation");
+			if (completed === "timeout") return;
+			assert.equal(completed.details.results[0]?.exitCode, 1);
+			assert.equal(completed.details.results[0]?.stopReason, "aborted");
+		} finally {
+			globalThis.setTimeout = originalSetTimeout;
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("collapsed subagent renderers use Pi keybinding hints for expansion", () => {
+	type ToolRecord = {
+		renderResult?: (
+			result: {
+				content: Array<{ type: "text"; text: string }>;
+				details: {
+					mode: "chain";
+					agentScope: "user";
+					projectAgentsDir: null;
+					results: Array<{
+						agent: string;
+						agentSource: "extension";
+						task: string;
+						exitCode: number;
+						messages: [];
+						stderr: string;
+						usage: {
+							input: number;
+							output: number;
+							cacheRead: number;
+							cacheWrite: number;
+							cost: number;
+							contextTokens: number;
+							turns: number;
+						};
+						step: number;
+					}>;
+				};
+			},
+			options: { expanded: false; isPartial: false },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+	};
+
+	const tools: ToolRecord[] = [];
+	const pi = {
+		on() {},
+		registerTool(tool: ToolRecord) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0];
+	assert.ok(tool?.renderResult);
+
+	const rendered = tool.renderResult(
+		{
+			content: [{ type: "text", text: "ok" }],
+			details: {
+				mode: "chain",
+				agentScope: "user",
+				projectAgentsDir: null,
+				results: [
+					{
+						agent: "worker",
+						agentSource: "extension",
+						task: "done",
+						exitCode: 0,
+						messages: [],
+						stderr: "",
+						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+						step: 1,
+					},
+				],
+			},
+		},
+		{ expanded: false, isPartial: false },
+		{ fg: (_color, text) => text, bold: (text) => text },
+	);
+
+	assert.match(rendered.text ?? "", /ctrl\+o[\s\S]*to expand/);
+});
+
 test("parallel renderer marks model error stop reasons as failed tasks", () => {
 	type ToolRecord = {
 		renderResult?: (

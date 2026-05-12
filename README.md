@@ -13,6 +13,12 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Prompts before running project-local agents in interactive/RPC UI sessions.
 - Includes prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
 
+## Requirements
+
+- Pi coding agent 0.74 or newer.
+- The `pi` executable available to the parent process (normal when the package runs inside Pi).
+- Credentials for any models selected by bundled or custom agents.
+
 ## Installation
 
 After publication:
@@ -70,6 +76,18 @@ The tool accepts exactly one mode:
 
 Parallel mode is limited to 8 tasks total, with up to 4 running at once.
 
+### Tool parameters
+
+| Field | Applies to | Description |
+| --- | --- | --- |
+| `agent` | Single | Agent name to run. Use with `task`. |
+| `task` | Single | Task text passed to the selected agent. Use with `agent`. |
+| `tasks` | Parallel | Array of `{ agent, task, cwd? }` items. |
+| `chain` | Chain | Array of `{ agent, task, cwd? }` steps. `{previous}` is replaced with the prior step's final output. |
+| `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. Bundled agents are always available. |
+| `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. |
+| `cwd` | Single | Working directory override for the single-agent subprocess. |
+
 `cwd` overrides on single, parallel, or chain tasks are resolved relative to the parent Pi working directory. A leading `@` is accepted and stripped, matching Pi file-reference conventions.
 
 ## Agent files
@@ -109,6 +127,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
 - Chain mode stops at the first failed step; parallel mode reports per-task success and failure counts.
+- Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 
 ## Development
 

@@ -16,7 +16,7 @@ This directory contains the Pi extension entry point, bundled agents, and workfl
 | Parallel | `{ tasks: [...] }` | Runs up to 8 tasks, with 4 subprocesses at a time. |
 | Chain | `{ chain: [...] }` | Runs steps sequentially; `{previous}` is replaced with prior output. |
 
-Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, tool allowlist, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
+Each subagent runs `pi --mode json -p --no-session` with the selected agent's system prompt, working directory, and either the agent's explicit `model` or the active parent Pi model plus thinking level. Tool access is capped by the parent Pi session's active tool allowlist; agent-level `tools` entries can narrow that list but cannot re-enable disabled parent tools. The delegated task prompt is sent over stdin instead of being exposed in child process arguments.
 
 ### Parameter reference
 
@@ -57,7 +57,7 @@ System prompt for the agent goes here.
 ```
 
 - `name` and `description` are required.
-- `tools` is optional and can be a comma-separated string or YAML list; omit it to use Pi's default active tools.
+- `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent.
 - `model` is optional; omit it to inherit the active parent Pi model and thinking level.
 
 ## Bundled agents
@@ -67,7 +67,7 @@ System prompt for the agent goes here.
 | `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls` |
 | `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
 | `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
-| `worker` | General-purpose implementation in an isolated context. | Pi defaults |
+| `worker` | General-purpose implementation in an isolated context. | Parent active tools |
 
 ## Workflow prompt templates
 
@@ -87,7 +87,7 @@ LLM-facing tool content is truncated from the tail at Pi's default limits (2,000
 
 ## Security notes
 
-Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. With the default `confirmProjectAgents: true`, the extension asks for confirmation before running project-local agents when UI is available and cancels in non-interactive runs. Set `confirmProjectAgents: false` only after reviewing and trusting the project agents.
+Project-local agents are repository-controlled prompts. Only use `agentScope: "project"` or `"both"` in repositories you trust. Agent tool lists are still capped by the parent session's active tools, but enabled tools can still read, run commands, or edit files under the agent prompt's direction. With the default `confirmProjectAgents: true`, the extension asks for confirmation before running project-local agents when UI is available and cancels in non-interactive runs. Set `confirmProjectAgents: false` only after reviewing and trusting the project agents.
 
 Delegated task text is passed to the child Pi process over stdin rather than as an argv value, reducing process-list exposure and avoiding OS argument-length failures for large chained handoffs.
 
@@ -99,5 +99,5 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
-- Chains stop at the first failed step and return completed step details.
+- Chains stop at the first failed step and return diagnostic output plus completed step details.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

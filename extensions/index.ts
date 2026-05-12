@@ -295,6 +295,23 @@ function resolveSubagentCwd(defaultCwd: string, cwd: string | undefined): string
 	return isAbsolute(normalized) ? normalized : resolve(defaultCwd, normalized);
 }
 
+function normalizeToolNames(toolNames: readonly string[] | undefined): string[] | undefined {
+	if (toolNames === undefined) return undefined;
+	return Array.from(new Set(toolNames.map((tool) => tool.trim()).filter(Boolean)));
+}
+
+function resolveChildToolAllowlist(
+	agentTools: readonly string[] | undefined,
+	parentActiveTools: readonly string[] | undefined,
+): string[] | undefined {
+	const parentTools = normalizeToolNames(parentActiveTools);
+	const requestedTools = normalizeToolNames(agentTools);
+	if (parentTools === undefined) return requestedTools;
+	if (requestedTools === undefined) return parentTools;
+	const parentToolSet = new Set(parentTools);
+	return requestedTools.filter((tool) => parentToolSet.has(tool));
+}
+
 function truncateForToolContent(text: string): string {
 	const truncation = truncateTail(text, {
 		maxLines: DEFAULT_MAX_LINES,
@@ -394,6 +411,7 @@ async function runSingleAgent(
 	task: string,
 	cwd: string | undefined,
 	fallbackModel: string | undefined,
+	parentActiveTools: readonly string[] | undefined,
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
@@ -425,8 +443,13 @@ async function runSingleAgent(
 	if (selectedModel) {
 		args.push("--model", selectedModel);
 	}
-	if (agent.tools !== undefined && agent.tools.length > 0) {
-		args.push("--tools", agent.tools.join(","));
+	const childTools = resolveChildToolAllowlist(agent.tools, parentActiveTools);
+	if (childTools !== undefined) {
+		if (childTools.length > 0) {
+			args.push("--tools", childTools.join(","));
+		} else {
+			args.push("--no-tools");
+		}
 	}
 
 	let tmpDir: string | null = null;
@@ -664,6 +687,7 @@ export default function (pi: ExtensionAPI): void {
 		parameters: SubagentParams,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+			const parentActiveTools = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : undefined;
 			const parentThinkingLevel = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : "off";
 			const parentThinkingSuffix = parentThinkingLevel && parentThinkingLevel !== "off" ? `:${parentThinkingLevel}` : "";
 			const parentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}${parentThinkingSuffix}` : undefined;
@@ -747,6 +771,7 @@ export default function (pi: ExtensionAPI): void {
 						task,
 						step.cwd,
 						parentModel,
+						parentActiveTools,
 						i + 1,
 						signal,
 						onUpdate
@@ -772,7 +797,7 @@ export default function (pi: ExtensionAPI): void {
 							content: [
 								{
 									type: "text",
-									text: `Chain stopped at step ${i + 1} (${result.agent}): ${makePlaceholder(collectFinalOutput(result.messages) || result.stderr || "(no output)")}`,
+									text: `Chain stopped at step ${i + 1} (${result.agent}).\n\n${truncateForToolContent(formatFailureOutput(result))}`,
 								},
 							],
 							details: makeDetails("chain")(results),
@@ -820,6 +845,7 @@ export default function (pi: ExtensionAPI): void {
 						task.task,
 						task.cwd,
 						parentModel,
+						parentActiveTools,
 						undefined,
 						signal,
 						onUpdate
@@ -869,6 +895,7 @@ export default function (pi: ExtensionAPI): void {
 					params.task,
 					params.cwd,
 					parentModel,
+					parentActiveTools,
 					undefined,
 					signal,
 					onUpdate,

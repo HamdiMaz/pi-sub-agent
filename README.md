@@ -108,7 +108,7 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
 
 | Scope | Loaded agents |
 | --- | --- |
@@ -118,7 +118,7 @@ Discovery order is bundled extension agents first, then user agents, then projec
 
 ## Security model
 
-Project-local agents are repository-controlled prompts. They can choose tools and can instruct a subagent to read files, run shell commands, or edit code. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
+Project-local agents are repository-controlled prompts. They can request tools within the parent session's active tool allowlist and can instruct a subagent to read files, run shell commands, or edit code when those tools remain enabled. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
 
 Delegated task text is written to the child Pi process over stdin instead of being appended to command-line arguments, reducing process-list exposure and avoiding OS argument-length limits during large chain handoffs.
 
@@ -133,7 +133,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
-- Chain mode stops at the first failed step; parallel mode reports per-task success and failure counts.
+- Chain mode stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 
 ## Troubleshooting

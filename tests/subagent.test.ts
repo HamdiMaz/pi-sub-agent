@@ -796,6 +796,135 @@ test("uses the parent model for bundled agents that do not pin a model", async (
 	});
 });
 
+test("subagents inherit the parent active tool allowlist when agent tools are omitted", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-tools.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read", "grep"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "capture inherited tools", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const toolsFlagIndex = argv.indexOf("--tools");
+				assert.notEqual(toolsFlagIndex, -1);
+				assert.equal(argv[toolsFlagIndex + 1], "read,grep");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("agent tool allowlists cannot exceed the parent active tool allowlist", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-intersect-tools.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			await writeAgent(join(dir, "config", "agents"), "limited.md", {
+				name: "limited",
+				description: "Agent that asks for more tools than the parent allows",
+				tools: "read, bash",
+			}, "Limited prompt");
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "limited", task: "capture intersected tools", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const toolsFlagIndex = argv.indexOf("--tools");
+				assert.notEqual(toolsFlagIndex, -1);
+				assert.equal(argv[toolsFlagIndex + 1], "read");
+				assert.doesNotMatch(argv.join(" "), /bash/);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
 test("single-agent tasks are passed over stdin instead of exposing prompt text in argv", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }> };
@@ -1139,6 +1268,64 @@ test("single-agent stop reasons are not deduped against assistant output text", 
 				const text = result.content[0]?.text ?? "";
 				assert.match(text, /assistant mentioned error/);
 				assert.match(text, /stopReason:[\s\S]*error/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("chain failures include stop reason diagnostics when no output exists", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { chain: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-chain-stop-reason.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ chain: [{ agent: "worker", task: "fail by stopReason" }], agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				assert.equal(result.details.results[0]?.exitCode, 0);
+				assert.equal(result.details.results[0]?.stopReason, "error");
+				assert.match(result.content[0]?.text ?? "", /Chain stopped at step 1/);
+				assert.match(result.content[0]?.text ?? "", /stopReason:[\s\S]*error/i);
 			} finally {
 				if (originalArgv === undefined) {
 					process.argv.splice(1, 1);

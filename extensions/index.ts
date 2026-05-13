@@ -335,15 +335,24 @@ function resolveChildToolAllowlist(
 	return requestedTools.filter((tool) => parentToolSet.has(tool));
 }
 
+function writeFullOutputTempFile(text: string): string {
+	const tmpDir = fs.mkdtempSync(join(os.tmpdir(), "pi-subagent-output-"));
+	const filePath = join(tmpDir, "output.txt");
+	fs.writeFileSync(filePath, text, { encoding: "utf-8", mode: 0o600 });
+	fs.chmodSync(filePath, 0o600);
+	return filePath;
+}
+
 function truncateForToolContent(text: string): string {
 	const truncation = truncateTail(text, {
 		maxLines: DEFAULT_MAX_LINES,
 		maxBytes: DEFAULT_MAX_BYTES,
 	});
 	if (!truncation.truncated) return truncation.content;
+	const fullOutputPath = writeFullOutputTempFile(text);
 	return [
 		truncation.content,
-		`[Subagent output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Expand the tool result for full structured details.]`,
+		`[Subagent output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output saved to: ${fullOutputPath}\nExpand the tool result for full structured details.]`,
 	].filter(Boolean).join("\n\n");
 }
 

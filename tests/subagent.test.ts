@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import setupExtension from "../extensions/index.ts";
@@ -2747,7 +2747,7 @@ test("chain handoff treats a final empty assistant text as the previous output",
 	});
 });
 
-test("single-agent results truncate LLM-facing content while retaining full details", async () => {
+test("single-agent results truncate LLM-facing content, save full output, and retain full details", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = {
 			content: Array<{ type: "text"; text: string }>;
@@ -2801,6 +2801,16 @@ test("single-agent results truncate LLM-facing content while retaining full deta
 			const text = result.content[0]?.text ?? "";
 			assert.match(text, /Subagent output truncated/i);
 			assert.ok(text.length < longOutput.length, `expected ${text.length} to be shorter than ${longOutput.length}`);
+			const match = text.match(/Full output saved to: (\S+)/);
+			assert.ok(match?.[1], "expected truncated output to include a full-output temp file path");
+			const savedPath = match[1];
+			try {
+				assert.equal(await readFile(savedPath, "utf8"), longOutput);
+				const savedStats = await stat(savedPath);
+				assert.equal(savedStats.mode & 0o077, 0, "full-output temp file should not be world/group-readable");
+			} finally {
+				await rm(dirname(savedPath), { recursive: true, force: true });
+			}
 			assert.equal(result.details.results[0]?.messages[0]?.content?.[0]?.text, longOutput);
 		} finally {
 			if (originalArgv === undefined) {

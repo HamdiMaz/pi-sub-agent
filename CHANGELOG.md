@@ -27,7 +27,7 @@ All notable changes to this project will be documented in this file.
 - Added an explicit `confirmProjectAgents: true` schema default so model-facing tool metadata matches the documented security behavior.
 - Sent delegated task prompts to child Pi processes over stdin instead of process arguments to reduce prompt exposure and avoid argument-length failures in large handoffs.
 - Blocked project-local agents in non-interactive runs unless `confirmProjectAgents: false` is explicitly set.
-- Truncated LLM-facing subagent output with Pi's default tool limits while preserving full structured result details for rendering and follow-up analysis.
+- Truncated LLM-facing subagent output with Pi's default tool limits, saved complete truncated output to private temp files, and preserved full structured result details for rendering and follow-up analysis.
 - Resolved subagent `cwd` overrides relative to the parent Pi working directory and accepted leading `@` path prefixes.
 - Fixed abort escalation for subagent subprocesses that ignore `SIGTERM` by tracking process close state before sending `SIGKILL`.
 - Replaced hard-coded expand shortcut text in subagent renderers with Pi keybinding-aware hints.
@@ -69,7 +69,7 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.
 - Removed bundled workflow prompt templates so the package does not create slash commands.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, private full-output temp files for truncated content, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, non-interactive project-agent confirmation behavior, and `/sub-agent-settings` usage.

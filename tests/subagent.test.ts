@@ -163,6 +163,10 @@ test("formats and resolves subagent model thinking overrides", () => {
 		"openai/gpt-5:low",
 	);
 	assert.equal(
+		resolveAgentModel({ model: "openai/gpt-5" }, "anthropic/claude-sonnet-4-5:high"),
+		"openai/gpt-5:high",
+	);
+	assert.equal(
 		resolveAgentModel({ thinking: "medium" }, "openai/gpt-5:high"),
 		"openai/gpt-5:medium",
 	);
@@ -222,12 +226,12 @@ test("discovers agents with YAML list tools and skips invalid or malformed front
 test("trims string frontmatter values before registering agents", async () => {
 	await withTempDir(async (dir) => {
 		const extensionAgentsDir = join(dir, "extension-agents");
-		await writeAgent(extensionAgentsDir, "trimmed.md", {
-			name: "  trimmed-agent  ",
-			description: "  Description with surrounding whitespace  ",
-			model: "  openai/gpt-5:low  ",
-			thinking: "  high  ",
-		}, "Prompt body");
+		await mkdir(extensionAgentsDir, { recursive: true });
+		await writeFile(
+			join(extensionAgentsDir, "trimmed.md"),
+			`---\nname: "  trimmed-agent  "\ndescription: "  Description with surrounding whitespace  "\nmodel: "  openai/gpt-5:low  "\nthinking: "  high  "\n---\n\nPrompt body\n`,
+			"utf8",
+		);
 
 		const discovery = discoverAgents(dir, "project", extensionAgentsDir);
 		assert.deepEqual(

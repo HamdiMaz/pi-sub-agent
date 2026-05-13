@@ -47,6 +47,8 @@ All notable changes to this project will be documented in this file.
 - Surfaced stop-reason and subprocess diagnostics in LLM-facing parallel summaries when a subagent task fails without assistant output.
 - Made `/sub-agent-settings` follow Pi non-interactive mode conventions by warning and exiting when no interactive UI is available.
 - Treated child Pi processes that emit only malformed non-JSON stdout as failed subagent runs and surfaced the stdout diagnostic instead of silently returning `(no output)`.
+- Preserved parent-session thinking effort when an agent sets a custom `model` but leaves `thinking` unset.
+- Trimmed quoted string frontmatter values for agent `name`, `description`, and `model` fields before registration.
 
 ### Chores
 
@@ -64,7 +66,7 @@ All notable changes to this project will be documented in this file.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, non-interactive project-agent confirmation behavior, and `/sub-agent-settings` usage.
-- Documented malformed-agent skipping, recursive-subagent blocking, parent-tool allowlist behavior for Pi's read-only search tools, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
+- Documented malformed-agent skipping, recursive-subagent blocking, parent-tool allowlist behavior for Pi's read-only search tools, independent model/thinking inheritance, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
 - Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.

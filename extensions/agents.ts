@@ -28,7 +28,9 @@ export interface AgentDiscoveryResult {
 }
 
 function frontmatterString(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value : undefined;
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed ? trimmed : undefined;
 }
 
 function frontmatterThinking(value: unknown): AgentThinkingLevel | undefined {
@@ -57,7 +59,9 @@ export function formatModelWithThinking(model: string | undefined, thinking: Age
 }
 
 export function resolveAgentModel(agent: Pick<AgentConfig, "model" | "thinking">, fallbackModel: string | undefined): string | undefined {
-	if (agent.model) return formatModelWithThinking(agent.model, agent.thinking);
+	const fallbackThinking = fallbackModel ? splitModelThinking(fallbackModel).thinking : undefined;
+	const thinking = agent.thinking ?? fallbackThinking;
+	if (agent.model) return formatModelWithThinking(agent.model, thinking);
 	if (agent.thinking) return formatModelWithThinking(fallbackModel, agent.thinking);
 	return fallbackModel;
 }

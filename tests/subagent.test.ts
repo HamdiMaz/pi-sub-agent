@@ -1735,6 +1735,65 @@ test("single-agent spawn errors surface actionable diagnostics", async () => {
 	});
 });
 
+test("single-agent failure diagnostics avoid duplicating model errors already present in stderr", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; errorMessage?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-duplicate-error.mjs");
+		await writeFile(
+			fakePi,
+			`console.error("model failed hard");\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "model failed hard" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "fail with duplicate diagnostics", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 0);
+				assert.equal(result.details.results[0]?.errorMessage, "model failed hard");
+				assert.equal((text.match(/model failed hard/g) ?? []).length, 1);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
 test("single-agent failures include assistant output and subprocess stderr", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number }> } };

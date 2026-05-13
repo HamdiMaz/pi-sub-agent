@@ -50,6 +50,7 @@ All notable changes to this project will be documented in this file.
 - Preserved parent-session thinking effort when an agent sets a custom `model` but leaves `thinking` unset.
 - Trimmed quoted string frontmatter values for agent `name`, `description`, and `model` fields before registration.
 - Marked pre-spawn subagent failures, including invalid mode arguments, nested invocations, project-agent confirmation blocks, and task-limit violations, as Pi tool errors while preserving structured details.
+- Avoided duplicating identical model error messages in LLM-facing failure diagnostics when the same text is already present in child process stderr or stdout.
 
 ### Chores
 

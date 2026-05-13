@@ -413,7 +413,16 @@ function formatFailureOutput(result: SingleResult): string {
 	addDistinctSection(parts, "Output", collectFinalOutput(result.messages));
 	addDistinctSection(parts, "stderr", result.stderr);
 	addDistinctSection(parts, "stdout", result.stdout);
-	addDistinctSection(parts, "Error", result.errorMessage);
+
+	const errorMessage = result.errorMessage?.trim();
+	const errorAlreadyInProcessOutput = Boolean(
+		errorMessage &&
+		(result.stderr.includes(errorMessage) || result.stdout?.includes(errorMessage))
+	);
+	if (!errorAlreadyInProcessOutput) {
+		addDistinctSection(parts, "Error", errorMessage);
+	}
+
 	addDistinctSection(parts, "stopReason", result.stopReason ? `${result.stopReason} (exit code ${result.exitCode})` : undefined);
 	if (result.exitCode !== 0 && !result.stopReason) parts.push(`Exit code:\n${result.exitCode}`);
 	if (parts.length > 0) return parts.join("\n\n");

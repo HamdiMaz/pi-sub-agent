@@ -466,6 +466,21 @@ test("marks failed subagent tool results as Pi tool errors without dropping deta
 		),
 		{ isError: true },
 	);
+	assert.deepEqual(
+		handler(
+			{
+				toolName: "subagent",
+				details: {
+					mode: "single",
+					agentScope: "user",
+					projectAgentsDir: null,
+					results: [{ exitCode: 0, stopReason: "length" }],
+				},
+			},
+			{},
+		),
+		{ isError: true },
+	);
 	assert.equal(
 		handler(
 			{
@@ -2191,6 +2206,64 @@ test("single-agent stopReason failures include the stop reason when no output ex
 				assert.equal(result.details.results[0]?.exitCode, 0);
 				assert.equal(result.details.results[0]?.stopReason, "error");
 				assert.match(result.content[0]?.text ?? "", /stopReason:[\s\S]*error/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("single-agent length stop reasons are treated as failed incomplete runs", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-length-stop.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "partial answer" }], stopReason: "length" } }));\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "hit output limit", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				assert.equal(result.details.results[0]?.exitCode, 0);
+				assert.equal(result.details.results[0]?.stopReason, "length");
+				assert.match(result.content[0]?.text ?? "", /partial answer/);
+				assert.match(result.content[0]?.text ?? "", /stopReason:[\s\S]*length/i);
 			} finally {
 				if (originalArgv === undefined) {
 					process.argv.splice(1, 1);

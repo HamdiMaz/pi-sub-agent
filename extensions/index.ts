@@ -382,7 +382,8 @@ function isTaskError(result: SingleResult): boolean {
 	return (
 		result.exitCode !== 0 ||
 		result.stopReason === "error" ||
-		result.stopReason === "aborted"
+		result.stopReason === "aborted" ||
+		result.stopReason === "length"
 	);
 }
 
@@ -390,7 +391,7 @@ function isFailedResultLike(value: unknown): boolean {
 	if (!isRecord(value)) return false;
 	const exitCode = typeof value.exitCode === "number" ? value.exitCode : 0;
 	const stopReason = typeof value.stopReason === "string" ? value.stopReason : undefined;
-	return exitCode !== 0 || stopReason === "error" || stopReason === "aborted";
+	return exitCode !== 0 || stopReason === "error" || stopReason === "aborted" || stopReason === "length";
 }
 
 function hasFailedSubagentResult(details: unknown): boolean {

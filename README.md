@@ -202,10 +202,11 @@ npm test
 npm run typecheck
 npm run lint
 npm run check
+npm audit --omit=dev
 npm pack --dry-run
 ```
 
-Confirm that `npm pack --dry-run` includes only the public runtime files: `extensions/`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `package.json`. Do not publish local `.pi/`, `tests/`, generated coverage, or development-only files.
+Confirm that `npm audit --omit=dev` reports no production dependency vulnerabilities and that `npm pack --dry-run` includes only the public runtime files: `extensions/`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `package.json`. Do not publish local `.pi/`, `tests/`, generated coverage, or development-only files.
 
 Key files:
 

@@ -76,4 +76,4 @@ All notable changes to this project will be documented in this file.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
 - Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.
-- Added an explicit release verification checklist to the public README covering tests, linting, type checking, the aggregate check script, and npm tarball dry-run review.
+- Added an explicit release verification checklist to the public README covering tests, linting, type checking, the aggregate check script, production dependency audit, and npm tarball dry-run review.

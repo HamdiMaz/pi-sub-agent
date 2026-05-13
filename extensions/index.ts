@@ -312,6 +312,16 @@ function resolveSubagentCwd(defaultCwd: string, cwd: string | undefined): string
 	return isAbsolute(normalized) ? normalized : resolve(defaultCwd, normalized);
 }
 
+function getInvalidSubagentCwdReason(cwd: string): string | undefined {
+	try {
+		const stats = fs.statSync(cwd);
+		return stats.isDirectory() ? undefined : "exists but is not a directory";
+	} catch (error) {
+		if (isRecord(error) && typeof error.code === "string") return error.code;
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
 function getSubagentDepth(value = process.env[SUBAGENT_DEPTH_ENV]): number {
 	if (value === undefined) return 0;
 	const parsed = Number.parseInt(value, 10);
@@ -558,6 +568,16 @@ async function runSingleAgent(
 	};
 
 	try {
+		const childCwd = resolveSubagentCwd(defaultCwd, cwd);
+		const invalidCwdReason = getInvalidSubagentCwdReason(childCwd);
+		if (invalidCwdReason) {
+			const diagnostic = `Subagent working directory does not exist or is not a directory: ${childCwd} (${invalidCwdReason})`;
+			result.exitCode = 1;
+			result.stderr = diagnostic;
+			result.errorMessage = diagnostic;
+			return result;
+		}
+
 		if (agent.systemPrompt.trim()) {
 			const file = await writePromptToTempFile(agent.name, agent.systemPrompt);
 			tmpDir = file.dir;
@@ -569,7 +589,7 @@ async function runSingleAgent(
 			const invocation = getPiInvocation(args);
 			const childEnv = { ...process.env, [SUBAGENT_DEPTH_ENV]: String(childSubagentDepth) };
 			const proc = spawn(invocation.command, invocation.args, {
-				cwd: resolveSubagentCwd(defaultCwd, cwd),
+				cwd: childCwd,
 				env: childEnv,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],

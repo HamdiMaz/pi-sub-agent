@@ -55,6 +55,7 @@ All notable changes to this project will be documented in this file.
 - Treated child assistant `stopReason: "length"` responses as failed incomplete subagent runs so truncated model outputs do not pass as successful handoffs.
 - Rejected partial or mixed subagent mode arguments before spawning child Pi processes, including top-level `cwd` on parallel or chain requests.
 - Fixed compact path rendering so paths that merely share the home-directory prefix, such as `/home/user-other`, are not incorrectly abbreviated as `~` paths.
+- Rejected invalid subagent `cwd` overrides before spawning child Pi processes and surfaced the resolved path in diagnostics so missing directories are not confused with missing `pi` executables.
 
 ### Chores
 
@@ -69,7 +70,7 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.
 - Removed bundled workflow prompt templates so the package does not create slash commands.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, private full-output temp files for truncated content, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, invalid `cwd` diagnostics, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, private full-output temp files for truncated content, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, non-interactive project-agent confirmation behavior, and `/sub-agent-settings` usage.

@@ -115,7 +115,8 @@ Before publishing, install the packed package in a scratch project and verify th
 
 ## Error handling
 
-- Invalid tool arguments return a clear error message; partial or mixed mode arguments are rejected before spawning child Pi processes.
+- Invalid tool arguments return a clear error message; partial or mixed mode arguments and invalid `cwd` overrides are rejected before spawning child Pi processes.
+- Invalid `cwd` diagnostics include the resolved path so missing directories are not confused with missing `pi` executables.
 - Unknown agents include the available agent list.
 - Non-zero subprocess exits, `stopReason: "error"`, `stopReason: "aborted"`, and `stopReason: "length"` are treated as failed subagent runs.
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.

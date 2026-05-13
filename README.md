@@ -158,6 +158,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 ## Error handling
 
 - Invalid requests return clear guidance and keep structured result details available to the main agent; partial or mixed mode arguments are rejected before spawning child Pi processes.
+- Invalid `cwd` overrides are rejected before spawning child Pi processes and include the resolved path in diagnostics.
 - Non-zero subprocess exits, `stopReason: "error"`, `stopReason: "aborted"`, and `stopReason: "length"` are treated as failed subagent runs.
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Malformed child stdout in JSON mode is captured as a diagnostic; if no JSON messages are produced, the run is treated as a failed subagent invocation instead of silently returning `(no output)`.

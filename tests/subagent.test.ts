@@ -2561,6 +2561,69 @@ test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefix
 	});
 });
 
+test("single-agent invalid cwd overrides return actionable diagnostics before spawning", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ stderr: string; exitCode: number }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; cwd: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		await mkdir(projectDir, { recursive: true });
+
+		const fakePi = join(dir, "fake-pi-cwd-should-not-run.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "spawned" }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "worker", task: "print cwd", cwd: "@missing/app", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+
+			const expectedPath = join(projectDir, "missing", "app");
+			assert.equal(result.details.results[0]?.exitCode, 1);
+			assert.match(result.details.results[0]?.stderr ?? "", /Subagent working directory does not exist or is not a directory/);
+			assert.match(result.content[0]?.text ?? "", new RegExp(escapeRegExp(expectedPath)));
+			assert.doesNotMatch(result.content[0]?.text ?? "", /Failed to start subagent process/);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("single-agent output preserves all assistant text parts in order", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }> };

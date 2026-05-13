@@ -543,6 +543,65 @@ test("subagent updates mark active subprocesses as running until they close", as
 	});
 });
 
+test("parallel subagent updates are immutable snapshots", async () => {
+	await withTempDir(async (dir) => {
+		type ToolUpdate = { details: { results: Array<{ exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { tasks: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: ((partial: ToolUpdate) => void) | undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<{ details: { results: Array<{ exitCode: number }> } }>;
+		};
+
+		const fakePi = join(dir, "fake-pi-parallel-updates.mjs");
+		await writeFile(
+			fakePi,
+			`const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "partial" }], stopReason: "tool_use" } }));\n` +
+				`await delay(50);\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "final" }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const updates: ToolUpdate[] = [];
+			const result = await tool.execute(
+				"tool-call-1",
+				{ tasks: [{ agent: "worker", task: "stream then finish" }], agentScope: "user" },
+				undefined,
+				(partial) => updates.push(partial),
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.ok(updates.length >= 1);
+			assert.equal(result.details.results[0]?.exitCode, 0);
+			assert.equal(updates[0]?.details.results[0]?.exitCode, -1);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("aborted subagents escalate to SIGKILL when SIGTERM is ignored", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { details: { results: Array<{ exitCode: number; stopReason?: string }> } };

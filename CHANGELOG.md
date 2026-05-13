@@ -58,6 +58,7 @@ All notable changes to this project will be documented in this file.
 - Expanded TypeScript checking to cover the test suite.
 - Added custom `subagent` prompt snippets, prompt guidelines, and interactive tool renderers for compact/expanded subagent output.
 - Fixed streaming update snapshots so active subprocesses stay marked as running until their final exit code is known.
+- Fixed parallel streaming update snapshots so previously emitted progress details cannot be mutated by later subprocess completions.
 - Switched `agentScope` to a Google-compatible `StringEnum` schema and declared Pi runtime imports as peer dependencies.
 - Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development commands.
 - Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.

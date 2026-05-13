@@ -1120,7 +1120,7 @@ export default function (pi: ExtensionAPI): void {
 								live[index] = current;
 								onUpdate({
 									content: partial.content,
-									details: makeDetails("parallel")(live),
+									details: makeDetails("parallel")(live.map(snapshotResult)),
 								});
 							}
 							: undefined,

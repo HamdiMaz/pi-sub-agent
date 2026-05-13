@@ -219,6 +219,24 @@ test("discovers agents with YAML list tools and skips invalid or malformed front
 	});
 });
 
+test("trims string frontmatter values before registering agents", async () => {
+	await withTempDir(async (dir) => {
+		const extensionAgentsDir = join(dir, "extension-agents");
+		await writeAgent(extensionAgentsDir, "trimmed.md", {
+			name: "  trimmed-agent  ",
+			description: "  Description with surrounding whitespace  ",
+			model: "  openai/gpt-5:low  ",
+			thinking: "  high  ",
+		}, "Prompt body");
+
+		const discovery = discoverAgents(dir, "project", extensionAgentsDir);
+		assert.deepEqual(
+			discovery.agents.map((agent) => [agent.name, agent.description, agent.model, agent.thinking]),
+			[["trimmed-agent", "Description with surrounding whitespace", "openai/gpt-5", "high"]],
+		);
+	});
+});
+
 test("registers a Pi-conventional subagent tool and settings command without bundled prompt resources", () => {
 	type ToolRecord = {
 		name?: unknown;

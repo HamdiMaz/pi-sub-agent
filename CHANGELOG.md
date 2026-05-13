@@ -60,11 +60,11 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.
 - Removed bundled workflow prompt templates so the package does not create slash commands.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, non-interactive project-agent confirmation behavior, and `/sub-agent-settings` usage.
-- Documented malformed-agent skipping, recursive-subagent blocking, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
+- Documented malformed-agent skipping, recursive-subagent blocking, parent-tool allowlist behavior for Pi's read-only search tools, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
 - Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.

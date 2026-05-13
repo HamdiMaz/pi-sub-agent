@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.1.1
+
+### Chores
+
+- Reissued the initial package release under a new npm version because `pi-sub-agent@0.1.0` was previously unpublished from npm and cannot be reused.
+- Updated package metadata to `0.1.1` for npm publication.
+
 ## v0.1.0
 
 ### Added

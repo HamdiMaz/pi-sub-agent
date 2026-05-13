@@ -1,6 +1,6 @@
 {
   "name": "pi-sub-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Pi package extension that provides sub-agent functionality.",
   "type": "module",
   "license": "MIT",

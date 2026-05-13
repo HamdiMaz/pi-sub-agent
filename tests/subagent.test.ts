@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import setupExtension from "../extensions/index.ts";
-import { discoverAgents } from "../extensions/agents.ts";
+import {
+	discoverAgents,
+	formatModelWithThinking,
+	resolveAgentModel,
+	updateAgentSettingsContent,
+} from "../extensions/agents.ts";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "pi-sub-agent-test-"));
@@ -122,6 +127,66 @@ test("discovers extension, user, and nearest project agents with documented prec
 	});
 });
 
+test("discovers agent model thinking suffixes and explicit thinking frontmatter", async () => {
+	await withTempDir(async (dir) => {
+		const extensionAgentsDir = join(dir, "extension-agents");
+		await writeAgent(extensionAgentsDir, "legacy.md", {
+			name: "legacy",
+			description: "Legacy model suffix",
+			model: "openai/gpt-5:high",
+		}, "Prompt body");
+		await writeAgent(extensionAgentsDir, "explicit.md", {
+			name: "explicit",
+			description: "Explicit thinking wins",
+			model: "openai/gpt-5:high",
+			thinking: "low",
+		}, "Prompt body");
+
+		const discovery = discoverAgents(dir, "project", extensionAgentsDir);
+		assert.deepEqual(
+			discovery.agents.map((agent) => [agent.name, agent.model, agent.thinking]).sort(([a], [b]) => String(a).localeCompare(String(b))),
+			[
+				["explicit", "openai/gpt-5", "low"],
+				["legacy", "openai/gpt-5", "high"],
+			],
+		);
+	});
+});
+
+test("formats and resolves subagent model thinking overrides", () => {
+	assert.equal(formatModelWithThinking("openai/gpt-5", "high"), "openai/gpt-5:high");
+	assert.equal(formatModelWithThinking("openai/gpt-5", "off"), "openai/gpt-5");
+	assert.equal(formatModelWithThinking(undefined, "high"), undefined);
+
+	assert.equal(
+		resolveAgentModel({ model: "openai/gpt-5", thinking: "low" }, "anthropic/claude-sonnet-4-5:high"),
+		"openai/gpt-5:low",
+	);
+	assert.equal(
+		resolveAgentModel({ thinking: "medium" }, "openai/gpt-5:high"),
+		"openai/gpt-5:medium",
+	);
+	assert.equal(
+		resolveAgentModel({}, "openai/gpt-5:high"),
+		"openai/gpt-5:high",
+	);
+});
+
+test("updates agent settings frontmatter without changing the prompt body", () => {
+	const content = `---\nname: reviewer\ndescription: Review code\ntools: read, grep\n---\n\nPrompt body\n`;
+	const updated = updateAgentSettingsContent(content, { model: "openai/gpt-5", thinking: "high" });
+	assert.match(updated, /^---\n/);
+	assert.match(updated, /\nmodel: openai\/gpt-5\n/);
+	assert.match(updated, /\nthinking: high\n/);
+	assert.match(updated, /\ntools: read, grep\n/);
+	assert.match(updated, /\n---\n\nPrompt body\n$/);
+
+	const cleared = updateAgentSettingsContent(updated, { model: null, thinking: null });
+	assert.doesNotMatch(cleared, /\nmodel:/);
+	assert.doesNotMatch(cleared, /\nthinking:/);
+	assert.match(cleared, /\n---\n\nPrompt body\n$/);
+});
+
 test("discovers agents with YAML list tools and skips invalid or malformed frontmatter without throwing", async () => {
 	await withTempDir(async (dir) => {
 		const extensionAgentsDir = join(dir, "extension-agents");
@@ -150,7 +215,7 @@ test("discovers agents with YAML list tools and skips invalid or malformed front
 	});
 });
 
-test("registers a Pi-conventional subagent tool without bundled slash-command resources", () => {
+test("registers a Pi-conventional subagent tool and settings command without bundled prompt resources", () => {
 	type ToolRecord = {
 		name?: unknown;
 		description?: unknown;
@@ -262,7 +327,7 @@ test("registers a Pi-conventional subagent tool without bundled slash-command re
 	assert.equal(agentScope.anyOf, undefined);
 	assert.equal(tool.parameters?.properties?.confirmProjectAgents?.default, true);
 
-	assert.deepEqual(registeredCommands, []);
+	assert.deepEqual(registeredCommands, ["sub-agent-settings"]);
 	for (const handler of resourceHandlers) {
 		const resources = handler({ cwd: process.cwd(), reason: "startup" }, {});
 		assert.equal(resources?.promptPaths?.length ?? 0, 0);
@@ -924,6 +989,75 @@ test("uses the parent model for bundled agents that do not pin a model", async (
 				const modelFlagIndex = argv.indexOf("--model");
 				assert.notEqual(modelFlagIndex, -1);
 				assert.equal(argv[modelFlagIndex + 1], "openai/gpt-5:high");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("uses agent-specific thinking settings when launching a subagent", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false; model: { provider: string; id: string } },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-agent-thinking.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getThinkingLevel() {
+				return "high" as const;
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+			registerCommand() {},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			await writeAgent(join(dir, "config", "agents"), "reviewer.md", {
+				name: "reviewer",
+				description: "Custom reviewer",
+				model: "openai/gpt-5",
+				thinking: "low",
+			}, "Prompt body");
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "reviewer", task: "capture argv", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false, model: { provider: "anthropic", id: "claude-sonnet-4-5" } },
+				);
+
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const modelFlagIndex = argv.indexOf("--model");
+				assert.notEqual(modelFlagIndex, -1);
+				assert.equal(argv[modelFlagIndex + 1], "openai/gpt-5:low");
 			} finally {
 				if (originalArgv === undefined) {
 					process.argv.splice(1, 1);

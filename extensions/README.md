@@ -6,7 +6,8 @@ This directory contains the Pi extension entry point and bundled agents for `pi-
 
 - A `subagent` tool for delegating work to isolated Pi subprocesses.
 - Bundled default agents from `extensions/agents/`.
-- No slash commands or prompt templates.
+- A `/sub-agent-settings` slash command for configuring sub-agent model and thinking effort.
+- No prompt templates.
 
 ## Tool modes
 
@@ -51,6 +52,7 @@ name: reviewer
 description: Code review specialist for quality and security analysis
 tools: read, grep, find, ls, bash
 # Optional: model: provider/model-id
+# Optional: thinking: off|minimal|low|medium|high|xhigh
 ---
 
 System prompt for the agent goes here.
@@ -58,7 +60,7 @@ System prompt for the agent goes here.
 
 - `name` and `description` are required.
 - `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent. The `subagent` tool is always removed from the child allowlist to avoid recursive delegation.
-- `model` is optional; omit it to inherit the active parent Pi model and thinking level.
+- `model` and `thinking` are optional; omit them to inherit the active parent Pi model and thinking level. Legacy `model: provider/model-id:high` values are parsed as a model plus thinking setting.
 - Agent files with unreadable content, missing required metadata, invalid metadata types, or malformed YAML frontmatter are skipped.
 
 ## Bundled agents
@@ -69,6 +71,10 @@ System prompt for the agent goes here.
 | `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
 | `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
 | `worker` | General-purpose implementation in an isolated context. | Parent active tools |
+
+## Slash command
+
+Use `/sub-agent-settings` to open an interactive settings window for bundled and user-defined sub-agents in the default `user` scope. The list displays each agent as `name  model • thinking`; `inherit` means the sub-agent uses the parent Pi session value. Changing a bundled agent writes a same-named user override under `~/.pi/agent/agents/` instead of editing package files.
 
 ## Output and rendering
 

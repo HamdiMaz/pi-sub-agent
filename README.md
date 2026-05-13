@@ -8,12 +8,13 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Supports **single**, **parallel**, and **chain** modes.
 - Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
 - Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
+- Provides `/sub-agent-settings` to view and edit each sub-agent's model and thinking effort.
 - Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
 - Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
 - Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB) while preserving full structured details for rendering.
 - Prevents recursive subagent fan-out by removing the `subagent` tool from child allowlists and blocking nested subagent invocations.
 - Requires confirmation before running project-local agents; non-interactive runs must explicitly set `confirmProjectAgents: false`.
-- Does not register slash commands or prompt templates.
+- Registers the `/sub-agent-settings` slash command, but does not bundle prompt templates.
 
 ## Requirements
 
@@ -102,6 +103,7 @@ name: my-agent
 description: What this agent does
 tools: read, grep, find, ls
 # Optional: model: provider/model-id
+# Optional: thinking: off|minimal|low|medium|high|xhigh
 ---
 
 System prompt for the agent goes here.
@@ -109,7 +111,7 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. `model` is optional; when omitted, the subagent is launched with the active parent Pi model and thinking level.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. `model` and `thinking` are optional; when omitted, the subagent is launched with the active parent Pi model and thinking level. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
 
 Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
 
@@ -118,6 +120,18 @@ Unreadable agent files, missing required `name`/`description` metadata, invalid 
 | `user` (default) | bundled + `~/.pi/agent/agents/*.md` |
 | `project` | bundled + nearest `.pi/agents/*.md` |
 | `both` | bundled + user + nearest project agents |
+
+## Slash commands
+
+### `/sub-agent-settings`
+
+Opens an interactive settings window listing the bundled and user-defined sub-agents visible in the default `user` scope. Each row shows the current model and thinking effort, for example:
+
+```text
+reviewer  openai/gpt-5.5 • high
+```
+
+Set either field to `inherit` to use the parent Pi session's active model or thinking level. Edits to user agents update their markdown frontmatter. Edits to bundled agents create or update a same-named user override in `~/.pi/agent/agents/`, so package files are not modified.
 
 ## Security model
 

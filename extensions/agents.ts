@@ -8,11 +8,16 @@ import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
 
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+export type AgentThinkingLevel = (typeof THINKING_LEVELS)[number];
+
 export interface AgentConfig {
 	name: string;
 	description: string;
 	tools?: string[];
 	model?: string;
+	thinking?: AgentThinkingLevel;
 	systemPrompt: string;
 	source: "user" | "project" | "extension";
 	filePath: string;
@@ -24,6 +29,59 @@ export interface AgentDiscoveryResult {
 
 function frontmatterString(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function frontmatterThinking(value: unknown): AgentThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return isThinkingLevel(trimmed) ? trimmed : undefined;
+}
+
+function isThinkingLevel(value: string): value is AgentThinkingLevel {
+	return (THINKING_LEVELS as readonly string[]).includes(value);
+}
+
+export function splitModelThinking(model: string): { model: string; thinking?: AgentThinkingLevel } {
+	const match = model.match(/:(off|minimal|low|medium|high|xhigh)$/);
+	if (!match) return { model };
+	const thinking = match[1];
+	if (!thinking || !isThinkingLevel(thinking)) return { model };
+	return { model: model.slice(0, -thinking.length - 1), thinking };
+}
+
+export function formatModelWithThinking(model: string | undefined, thinking: AgentThinkingLevel | undefined): string | undefined {
+	if (!model) return undefined;
+	const base = splitModelThinking(model).model;
+	if (!thinking || thinking === "off") return base;
+	return `${base}:${thinking}`;
+}
+
+export function resolveAgentModel(agent: Pick<AgentConfig, "model" | "thinking">, fallbackModel: string | undefined): string | undefined {
+	if (agent.model) return formatModelWithThinking(agent.model, agent.thinking);
+	if (agent.thinking) return formatModelWithThinking(fallbackModel, agent.thinking);
+	return fallbackModel;
+}
+
+export interface AgentSettingsUpdate {
+	model?: string | null;
+	thinking?: AgentThinkingLevel | null;
+}
+
+export function updateAgentSettingsContent(content: string, update: AgentSettingsUpdate): string {
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+	if (!match) throw new Error("Agent file is missing YAML frontmatter");
+	const frontmatter = match[1] ?? "";
+	const body = content.slice(match[0].length);
+	const lines = frontmatter.split(/\r?\n/).filter((line) => !/^\s*(model|thinking)\s*:/.test(line));
+
+	if (update.model !== undefined && update.model !== null && update.model.trim()) {
+		lines.push(`model: ${splitModelThinking(update.model.trim()).model}`);
+	}
+	if (update.thinking !== undefined && update.thinking !== null) {
+		lines.push(`thinking: ${update.thinking}`);
+	}
+
+	return `---\n${lines.join("\n")}\n---\n${body}`;
 }
 
 function parseTools(value: unknown): string[] | undefined {
@@ -77,7 +135,10 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"
 		}
 
 		const tools = parseTools(frontmatter.tools);
-		const model = frontmatterString(frontmatter.model);
+		const rawModel = frontmatterString(frontmatter.model);
+		const parsedModel = rawModel ? splitModelThinking(rawModel) : undefined;
+		const model = parsedModel?.model;
+		const thinking = frontmatterThinking(frontmatter.thinking) ?? parsedModel?.thinking;
 
 		const agent: AgentConfig = {
 			name,
@@ -91,6 +152,9 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "extension"
 		}
 		if (model) {
 			agent.model = model;
+		}
+		if (thinking) {
+			agent.thinking = thinking;
 		}
 		agents.push(agent);
 	}

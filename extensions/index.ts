@@ -16,14 +16,24 @@ import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	formatSize,
+	getAgentDir,
 	getMarkdownTheme,
+	getSettingsListTheme,
 	keyText,
 	truncateTail,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Markdown, SelectList, Spacer, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
+import {
+	type AgentConfig,
+	type AgentScope,
+	type AgentThinkingLevel,
+	THINKING_LEVELS,
+	discoverAgents,
+	resolveAgentModel,
+	updateAgentSettingsContent,
+} from "./agents.js";
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const MAX_PARALLEL_TASKS = 8;
@@ -472,7 +482,7 @@ async function runSingleAgent(
 
 	const args = ["--mode", "json", "-p", "--no-session"];
 	const stdinPrompt = `Task: ${task}`;
-	const selectedModel = agent.model ?? fallbackModel;
+	const selectedModel = resolveAgentModel(agent, fallbackModel);
 	if (selectedModel) {
 		args.push("--model", selectedModel);
 	}
@@ -695,7 +705,170 @@ const SubagentParams = Type.Object({
 	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode", minLength: 1 })),
 });
 
+const INHERIT = "inherit";
+
+function formatAgentSettings(agent: Pick<AgentConfig, "model" | "thinking">): string {
+	return `${agent.model ?? INHERIT} • ${agent.thinking ?? INHERIT}`;
+}
+
+function getAgentSettingsTarget(agent: AgentConfig): string {
+	if (agent.source !== "extension") return agent.filePath;
+	return join(getAgentDir(), "agents", `${agent.name}.md`);
+}
+
+function persistAgentSettings(agent: AgentConfig): string {
+	const targetPath = getAgentSettingsTarget(agent);
+	const content = fs.readFileSync(agent.filePath, "utf-8");
+	const updated = updateAgentSettingsContent(content, {
+		model: agent.model ?? null,
+		thinking: agent.thinking ?? null,
+	});
+	fs.mkdirSync(dirname(targetPath), { recursive: true });
+	fs.writeFileSync(targetPath, updated, "utf-8");
+	return targetPath;
+}
+
+function isAgentThinkingLevel(value: string): value is AgentThinkingLevel {
+	return (THINKING_LEVELS as readonly string[]).includes(value);
+}
+
 export default function (pi: ExtensionAPI): void {
+	if (typeof pi.registerCommand === "function") pi.registerCommand("sub-agent-settings", {
+		description: "Configure sub-agent models and thinking effort",
+		handler: async (_args, ctx) => {
+			const discovery = discoverAgents(ctx.cwd, "user", join(extensionDir, "agents"));
+			const agents = discovery.agents.sort((a, b) => a.name.localeCompare(b.name));
+			if (agents.length === 0) {
+				ctx.ui.notify("No sub-agents found", "warning");
+				return;
+			}
+
+			const models = ctx.modelRegistry
+				.getAll()
+				.map((model) => ({
+					value: `${model.provider}/${model.id}`,
+					label: model.id,
+					description: `${model.provider}${model.reasoning ? " • reasoning" : ""}`,
+				}))
+				.sort((a, b) => a.value.localeCompare(b.value));
+
+			await ctx.ui.custom((tui, theme, _keybindings, done) => {
+				const mainItems: SettingItem[] = agents.map((agent) => ({
+					id: agent.name,
+					label: agent.name,
+					currentValue: formatAgentSettings(agent),
+					description: `${agent.source} • ${agent.description}`,
+					submenu: (_currentValue, closeAgentMenu) => {
+						const agentSettingsItems: SettingItem[] = [
+							{
+								id: "model",
+								label: "Model",
+								currentValue: agent.model ?? INHERIT,
+								description: "Model used by this sub-agent. Inherit uses the parent Pi session model.",
+								submenu: (_currentModel, closeModelMenu) => {
+									const selectItems = [
+										{ value: INHERIT, label: INHERIT, description: "Use the parent Pi session model" },
+										...models,
+									];
+									const selectList = new SelectList(selectItems, Math.min(selectItems.length, 12), {
+										selectedPrefix: (text: string) => theme.fg("accent", text),
+										selectedText: (text: string) => theme.fg("accent", text),
+										description: (text: string) => theme.fg("muted", text),
+										scrollInfo: (text: string) => theme.fg("dim", text),
+										noMatch: (text: string) => theme.fg("warning", text),
+									});
+									const selectedIndex = selectItems.findIndex((item) => item.value === (agent.model ?? INHERIT));
+									selectList.setSelectedIndex(Math.max(0, selectedIndex));
+									selectList.onSelect = (item) => closeModelMenu(item.value);
+									selectList.onCancel = () => closeModelMenu(undefined);
+									return selectList;
+								},
+							},
+							{
+								id: "thinking",
+								label: "Thinking",
+								currentValue: agent.thinking ?? INHERIT,
+								description: "Thinking effort for this sub-agent. Inherit uses the parent Pi session thinking level.",
+								values: [INHERIT, ...THINKING_LEVELS],
+							},
+						];
+
+						const persistAndNotify = () => {
+							const targetPath = persistAgentSettings(agent);
+							ctx.ui.notify(`Saved ${agent.name} settings to ${shortenPath(targetPath)}`, "info");
+						};
+						const settingsList = new SettingsList(
+							agentSettingsItems,
+							agentSettingsItems.length + 2,
+							getSettingsListTheme(),
+							(id, newValue) => {
+								if (id === "model") {
+									if (newValue === INHERIT) {
+										delete agent.model;
+									} else {
+										agent.model = newValue;
+									}
+								} else if (id === "thinking") {
+									if (newValue === INHERIT) {
+										delete agent.thinking;
+									} else if (isAgentThinkingLevel(newValue)) {
+										agent.thinking = newValue;
+									}
+								}
+								persistAndNotify();
+							},
+							() => closeAgentMenu(formatAgentSettings(agent)),
+						);
+
+						return {
+							render(width: number) {
+								return [
+									theme.fg("accent", theme.bold(`Sub-agent: ${agent.name}`)),
+									"",
+									...settingsList.render(width),
+								];
+							},
+							invalidate() {
+								settingsList.invalidate();
+							},
+							handleInput(data: string) {
+								settingsList.handleInput(data);
+								tui.requestRender();
+							},
+						};
+					},
+				}));
+
+				const settingsList = new SettingsList(
+					mainItems,
+					Math.min(mainItems.length + 2, 15),
+					getSettingsListTheme(),
+					() => {},
+					() => done(undefined),
+					{ enableSearch: true },
+				);
+
+				return {
+					render(width: number) {
+						return [
+							theme.fg("accent", theme.bold("Sub-agent Settings")),
+							theme.fg("dim", "Configure models and thinking effort. Bundled agents save as user overrides."),
+							"",
+							...settingsList.render(width),
+						];
+					},
+					invalidate() {
+						settingsList.invalidate();
+					},
+					handleInput(data: string) {
+						settingsList.handleInput(data);
+						tui.requestRender();
+					},
+				};
+			});
+		},
+	});
+
 	pi.on("tool_result", (event) => {
 		if (event.toolName !== "subagent") return;
 		if (!hasFailedSubagentResult(event.details)) return;

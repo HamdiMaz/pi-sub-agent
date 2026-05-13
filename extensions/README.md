@@ -104,6 +104,15 @@ Recursive delegation is intentionally blocked. The parent process sets `PI_SUB_A
 
 Delegated task text is passed to the child Pi process over stdin rather than as an argv value, reducing process-list exposure and avoiding OS argument-length failures for large chained handoffs.
 
+## Release smoke test
+
+Before publishing, install the packed package in a scratch project and verify the runtime path, not just the checkout:
+
+1. Confirm Pi startup lists the installed `pi-sub-agent` extension.
+2. Open `/sub-agent-settings` and verify bundled agents render in the settings UI.
+3. Delegate a small read-only task to `scout` in a disposable repository and confirm progress, final Markdown output, and structured details render correctly.
+4. Keep project-local agents disabled unless their `.pi/agents/*.md` prompts have been reviewed and the confirmation flow is intentionally accepted.
+
 ## Error handling
 
 - Invalid tool arguments return a clear error message; partial or mixed mode arguments are rejected before spawning child Pi processes.

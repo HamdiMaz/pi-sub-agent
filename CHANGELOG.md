@@ -79,5 +79,6 @@ All notable changes to this project will be documented in this file.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
 - Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.
 - Added an explicit release verification checklist to the public README covering tests, linting, type checking, the aggregate check script, production dependency audit, and npm tarball dry-run review.
+- Added public and extension documentation for installed-package smoke testing before publishing, including settings UI, delegated scout runs, and project-agent trust checks.
 - Documented that invalid partial or mixed subagent mode arguments are rejected before child Pi processes are spawned.
 - Performed a public-release readiness review against Pi extension/package conventions and verified the documented test, lint, typecheck, production audit, and npm tarball dry-run checks.

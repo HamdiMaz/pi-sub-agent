@@ -208,6 +208,13 @@ npm pack --dry-run
 
 Confirm that `npm audit --omit=dev` reports no production dependency vulnerabilities and that `npm pack --dry-run` includes only the public runtime files: `extensions/`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `package.json`. Do not publish local `.pi/`, `tests/`, generated coverage, or development-only files.
 
+After installing the packed package in a scratch project, run a short interactive smoke test before publishing publicly:
+
+1. Start Pi with the installed package enabled and confirm the startup header lists `pi-sub-agent`.
+2. Run `/sub-agent-settings` and verify bundled agents are listed; exit without saving if no changes are needed.
+3. Ask for a simple `scout` delegation in a disposable repository and confirm the child process streams progress and returns structured output.
+4. If testing project-local agents, review the `.pi/agents/*.md` files first and leave `confirmProjectAgents` enabled unless the repository is trusted.
+
 Key files:
 
 - `extensions/index.ts` — Pi extension and `subagent` tool implementation.

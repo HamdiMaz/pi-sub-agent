@@ -103,7 +103,7 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Subprocess launch failures include the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Malformed child stdout in JSON mode is captured in structured diagnostics; if the child produces no JSON messages, the run fails instead of silently returning `(no output)`.
-- Failed subagent runs are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` and stderr/stdout/error diagnostics for rendering and follow-up analysis.
+- Failed subagent runs and pre-spawn failures (invalid arguments, nested calls, project-agent confirmation blocks, or task-limit violations) are marked as Pi tool errors via the `tool_result` hook while preserving structured `details` and stderr/stdout/error diagnostics for rendering and follow-up analysis.
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
 - Nested `subagent` calls are blocked before spawning another Pi process.
 - Chains are capped at 8 steps, stop at the first failed step, and return diagnostic output plus completed step details.

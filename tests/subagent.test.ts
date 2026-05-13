@@ -410,10 +410,11 @@ test("marks failed subagent tool results as Pi tool errors without dropping deta
 		event: {
 			toolName: string;
 			details?: {
-				mode: "parallel";
+				mode: "single" | "parallel";
 				agentScope: "user";
 				projectAgentsDir: null;
 				results: Array<{ exitCode: number; stopReason?: string }>;
+				error?: string;
 			};
 		},
 		ctx: unknown,
@@ -443,6 +444,22 @@ test("marks failed subagent tool results as Pi tool errors without dropping deta
 					agentScope: "user",
 					projectAgentsDir: null,
 					results: [{ exitCode: 0, stopReason: "error" }],
+				},
+			},
+			{},
+		),
+		{ isError: true },
+	);
+	assert.deepEqual(
+		handler(
+			{
+				toolName: "subagent",
+				details: {
+					mode: "single",
+					agentScope: "user",
+					projectAgentsDir: null,
+					results: [],
+					error: "Invalid subagent arguments. Use exactly one mode.",
 				},
 			},
 			{},

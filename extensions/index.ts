@@ -94,6 +94,7 @@ interface SubagentDetails {
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	error?: string;
 }
 
 type OnUpdateCallback = (partial: { content: Array<{ type: "text"; text: string }>; details: SubagentDetails }) => void;
@@ -394,6 +395,7 @@ function isFailedResultLike(value: unknown): boolean {
 
 function hasFailedSubagentResult(details: unknown): boolean {
 	if (!isRecord(details)) return false;
+	if (typeof details.error === "string" && details.error.trim()) return true;
 	return Array.isArray(details.results) && details.results.some(isFailedResultLike);
 }
 
@@ -924,11 +926,12 @@ export default function (pi: ExtensionAPI): void {
 			const parentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}${parentThinkingSuffix}` : undefined;
 			const discovery = discoverAgents(ctx.cwd, agentScope, join(extensionDir, "agents"));
 			const agents = discovery.agents;
-			const makeDetails = (mode: "single" | "parallel" | "chain") => (results: SingleResult[]): SubagentDetails => ({
+			const makeDetails = (mode: "single" | "parallel" | "chain") => (results: SingleResult[], error?: string): SubagentDetails => ({
 				mode,
 				agentScope,
 				projectAgentsDir: discovery.projectAgentsDir,
 				results,
+				...(error ? { error } : {}),
 			});
 
 			const hasSingle = Boolean(params.agent && params.task);
@@ -937,28 +940,30 @@ export default function (pi: ExtensionAPI): void {
 			const modeCount = Number(hasSingle) + Number(hasParallel) + Number(hasChain);
 
 			if (modeCount !== 1) {
+				const error = "Invalid subagent arguments. Use exactly one of: {agent,task} or {tasks} or {chain}.";
 				return {
 					content: [
 						{
 							type: "text",
-							text: "Invalid subagent arguments. Use exactly one of: {agent,task} or {tasks} or {chain}.",
+							text: error,
 						},
 					],
-					details: makeDetails("single")([]),
+					details: makeDetails("single")([], error),
 				};
 			}
 
 			const selectedMode = hasChain ? "chain" : hasParallel ? "parallel" : "single";
 			const currentDepth = getSubagentDepth();
 			if (currentDepth >= MAX_SUBAGENT_DEPTH) {
+				const error = "Nested subagent execution is disabled to avoid runaway recursive delegation.";
 				return {
 					content: [
 						{
 							type: "text",
-							text: "Nested subagent execution is disabled to avoid runaway recursive delegation.",
+							text: error,
 						},
 					],
-					details: makeDetails(selectedMode)([]),
+					details: makeDetails(selectedMode)([], error),
 				};
 			}
 			const childSubagentDepth = currentDepth + 1;
@@ -973,14 +978,15 @@ export default function (pi: ExtensionAPI): void {
 					.filter((agent): agent is AgentConfig => agent !== undefined && agent.source === "project");
 				if (projectAgents.length > 0) {
 					if (!ctx.hasUI) {
+						const error = "Canceled: running project-local agents requires confirmation, but no UI is available. Set confirmProjectAgents: false only for trusted repositories.";
 						return {
 							content: [
 								{
 									type: "text",
-									text: "Canceled: running project-local agents requires confirmation, but no UI is available. Set confirmProjectAgents: false only for trusted repositories.",
+									text: error,
 								},
 							],
-							details: makeDetails(selectedMode)([]),
+							details: makeDetails(selectedMode)([], error),
 						};
 					}
 
@@ -989,14 +995,15 @@ export default function (pi: ExtensionAPI): void {
 						`Agents: ${projectAgents.map((entry) => entry.name).join(", ")}\nSource: ${discovery.projectAgentsDir ?? "(none)"}`,
 					);
 					if (!approved) {
+						const error = "Canceled: project-local agents not approved.";
 						return {
 							content: [
 								{
 									type: "text",
-									text: "Canceled: project-local agents not approved.",
+									text: error,
 								},
 							],
-							details: makeDetails(selectedMode)([]),
+							details: makeDetails(selectedMode)([], error),
 						};
 					}
 				}
@@ -1004,11 +1011,12 @@ export default function (pi: ExtensionAPI): void {
 
 			if (hasChain && params.chain) {
 				if (params.chain.length > MAX_CHAIN_STEPS) {
+					const error = `Too many chain steps; max is ${MAX_CHAIN_STEPS}.`;
 					return {
 						content: [
-							{ type: "text", text: `Too many chain steps; max is ${MAX_CHAIN_STEPS}.` },
+							{ type: "text", text: error },
 						],
-						details: makeDetails("chain")([]),
+						details: makeDetails("chain")([], error),
 					};
 				}
 
@@ -1074,11 +1082,12 @@ export default function (pi: ExtensionAPI): void {
 
 			if (hasParallel && params.tasks) {
 				if (params.tasks.length > MAX_PARALLEL_TASKS) {
+					const error = `Too many parallel tasks; max is ${MAX_PARALLEL_TASKS}.`;
 					return {
 						content: [
-							{ type: "text", text: `Too many parallel tasks; max is ${MAX_PARALLEL_TASKS}.` },
+							{ type: "text", text: error },
 						],
-						details: makeDetails("parallel")([]),
+						details: makeDetails("parallel")([], error),
 					};
 				}
 
@@ -1177,14 +1186,15 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			const available = agents.map((agent) => `${agent.name} (${agent.source})`).join(", ") || "none";
+			const error = `Invalid request. Available agents: ${available}`;
 			return {
 				content: [
 					{
 						type: "text",
-						text: `Invalid request. Available agents: ${available}`,
+						text: error,
 					},
 				],
-				details: makeDetails("single")([]),
+				details: makeDetails("single")([], error),
 			};
 		},
 		renderCall(args, theme) {

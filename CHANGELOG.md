@@ -49,6 +49,7 @@ All notable changes to this project will be documented in this file.
 - Treated child Pi processes that emit only malformed non-JSON stdout as failed subagent runs and surfaced the stdout diagnostic instead of silently returning `(no output)`.
 - Preserved parent-session thinking effort when an agent sets a custom `model` but leaves `thinking` unset.
 - Trimmed quoted string frontmatter values for agent `name`, `description`, and `model` fields before registration.
+- Marked pre-spawn subagent failures, including invalid mode arguments, nested invocations, project-agent confirmation blocks, and task-limit violations, as Pi tool errors while preserving structured details.
 
 ### Chores
 

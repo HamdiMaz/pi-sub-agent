@@ -1103,9 +1103,10 @@ export default function (pi: ExtensionAPI): void {
 				const succeeded = results.filter((result) => !isTaskError(result)).length;
 				const summary = results
 					.map((result, index) => {
-						const icon = isTaskError(result) ? "✗" : "✓";
+						const failed = isTaskError(result);
+						const icon = failed ? "✗" : "✓";
 						const output = makePlaceholder(
-							collectFinalOutput(result.messages) || result.stderr || "(no output)",
+							failed ? formatFailureOutput(result) : collectFinalOutput(result.messages) || "(no output)",
 						);
 						return `${index + 1}. ${icon} ${result.agent} - ${output}`;
 					})

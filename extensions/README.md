@@ -104,4 +104,5 @@ Delegated task text is passed to the child Pi process over stdin rather than as 
 - Project-local agents are blocked without UI confirmation unless `confirmProjectAgents: false` is explicitly set.
 - Nested `subagent` calls are blocked before spawning another Pi process.
 - Chains are capped at 8 steps, stop at the first failed step, and return diagnostic output plus completed step details.
+- Parallel runs return per-task success/failure counts and include failure diagnostics for tasks that exit non-zero or stop with model errors.
 - Aborts propagate to the active subprocess and escalate from `SIGTERM` to `SIGKILL` after 5 seconds.

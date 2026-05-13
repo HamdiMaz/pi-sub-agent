@@ -155,7 +155,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output, subprocess diagnostics, or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
 - Nested `subagent` calls are blocked before spawning another Pi process.
-- Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts.
+- Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts with failure diagnostics.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
 
 ## Troubleshooting

@@ -34,6 +34,14 @@ Each subagent runs `pi --mode json -p --no-session` with the selected agent's sy
 
 `cwd` overrides are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
 
+## Delegation best practices
+
+- Give each subagent a complete task statement with the goal, constraints, expected output, and known file paths.
+- Use `scout` for discovery, `planner` for read-only planning, `reviewer` for focused review, and `worker` for implementation tasks that benefit from isolated context.
+- Use parallel mode only for independent tasks; use chain mode only when a later step genuinely needs `{previous}` from the prior step.
+- Keep chained outputs compact because only the prior final text is inserted into the next task. Full messages remain in structured `details` for rendering and follow-up analysis.
+- Keep `agentScope` at `"user"` unless you have reviewed and trust project-local agents.
+
 ## Agent discovery
 
 Bundled agents are always available. `agentScope` controls additional locations:

@@ -79,6 +79,14 @@ The tool accepts exactly one mode:
 
 Parallel mode is limited to 8 tasks total, with up to 4 running at once. Chain mode is limited to 8 sequential steps.
 
+### Delegation best practices
+
+- Keep each delegated task self-contained: include the goal, relevant constraints, expected output, and any file paths already known.
+- Prefer `scout` for broad repository discovery, `planner` for read-only implementation plans, `reviewer` for focused code review, and `worker` only when an isolated implementation context is useful.
+- Use parallel mode for independent research tasks; use chain mode only when each step needs the previous step's output.
+- Keep chain handoffs concise. The full subagent details remain available in the tool result, but the next subagent only receives the previous final text through `{previous}`.
+- Review project-local agents before enabling `agentScope: "project"` or `"both"`, especially in repositories you did not create.
+
 ### Tool parameters
 
 | Field | Applies to | Description |

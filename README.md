@@ -184,6 +184,20 @@ This package follows Pi package conventions for public distribution:
 - The package intentionally does not publish `prompts/`, `skills/`, or `themes/`; it only registers the `subagent` tool and `/sub-agent-settings` command.
 - Before publishing, run `npm run check` and `npm pack --dry-run` to verify tests, linting, type checking, and packaged files.
 
+### Release verification checklist
+
+Run these from the repository root immediately before publishing:
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run check
+npm pack --dry-run
+```
+
+Confirm that `npm pack --dry-run` includes only the public runtime files: `extensions/`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `package.json`. Do not publish local `.pi/`, `tests/`, generated coverage, or development-only files.
+
 Key files:
 
 - `extensions/index.ts` — Pi extension and `subagent` tool implementation.

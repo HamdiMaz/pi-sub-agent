@@ -736,6 +736,11 @@ export default function (pi: ExtensionAPI): void {
 	if (typeof pi.registerCommand === "function") pi.registerCommand("sub-agent-settings", {
 		description: "Configure sub-agent models and thinking effort",
 		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("Sub-agent settings require an interactive UI.", "warning");
+				return;
+			}
+
 			const discovery = discoverAgents(ctx.cwd, "user", join(extensionDir, "agents"));
 			const agents = discovery.agents.sort((a, b) => a.name.localeCompare(b.name));
 			if (agents.length === 0) {

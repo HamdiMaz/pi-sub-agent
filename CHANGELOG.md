@@ -45,6 +45,7 @@ All notable changes to this project will be documented in this file.
 - Skipped agent files with malformed YAML frontmatter so one bad user or project agent definition cannot break subagent discovery.
 - Prevented recursive subagent fan-out by removing the `subagent` tool from child allowlists, passing depth state to child Pi processes, and blocking nested subagent invocations before spawning another process.
 - Surfaced stop-reason and subprocess diagnostics in LLM-facing parallel summaries when a subagent task fails without assistant output.
+- Made `/sub-agent-settings` follow Pi non-interactive mode conventions by warning and exiting when no interactive UI is available.
 
 ### Chores
 

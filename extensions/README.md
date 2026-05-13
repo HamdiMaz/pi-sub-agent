@@ -76,7 +76,7 @@ System prompt for the agent goes here.
 
 ## Slash command
 
-Use `/sub-agent-settings` to open an interactive settings window for bundled and user-defined sub-agents in the default `user` scope. The list displays each agent as `name  model • thinking`; `inherit` means the sub-agent uses the parent Pi session value. Changing a bundled agent writes a same-named user override under `~/.pi/agent/agents/` instead of editing package files.
+Use `/sub-agent-settings` to open an interactive settings window for bundled and user-defined sub-agents in the default `user` scope. The command requires UI support; in print/JSON modes it shows a warning and does not attempt to open the settings window. The list displays each agent as `name  model • thinking`; `inherit` means the sub-agent uses the parent Pi session value. Changing a bundled agent writes a same-named user override under `~/.pi/agent/agents/` instead of editing package files.
 
 ## Output and rendering
 

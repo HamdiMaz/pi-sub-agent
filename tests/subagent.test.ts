@@ -338,6 +338,51 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	}
 });
 
+test("settings command reports that interactive UI is required in non-interactive modes", async () => {
+	type CommandHandler = (
+		args: string,
+		ctx: {
+			cwd: string;
+			hasUI: false;
+			ui: {
+				notify: (message: string, level: "info" | "warning" | "error") => void;
+				custom: () => Promise<void>;
+			};
+		},
+	) => Promise<void>;
+
+	let handler: CommandHandler | undefined;
+	const pi = {
+		on() {},
+		registerTool() {},
+		registerCommand(name: string, options: { handler: CommandHandler }) {
+			if (name === "sub-agent-settings") handler = options.handler;
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	assert.ok(handler);
+
+	let customCalled = false;
+	const notifications: Array<{ message: string; level: string }> = [];
+	await handler("", {
+		cwd: process.cwd(),
+		hasUI: false,
+		ui: {
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			async custom() {
+				customCalled = true;
+			},
+		},
+	});
+
+	assert.equal(customCalled, false);
+	assert.deepEqual(notifications, [
+		{ message: "Sub-agent settings require an interactive UI.", level: "warning" },
+	]);
+});
+
 test("marks failed subagent tool results as Pi tool errors without dropping details", () => {
 	type ToolResultHandler = (
 		event: {

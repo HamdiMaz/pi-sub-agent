@@ -125,7 +125,7 @@ Unreadable agent files, missing required `name`/`description` metadata, invalid 
 
 ### `/sub-agent-settings`
 
-Opens an interactive settings window listing the bundled and user-defined sub-agents visible in the default `user` scope. Each row shows the current model and thinking effort, for example:
+Opens an interactive settings window listing the bundled and user-defined sub-agents visible in the default `user` scope. In print/JSON modes where no interactive UI is available, the command exits with a warning instead of opening the settings window. Each row shows the current model and thinking effort, for example:
 
 ```text
 reviewer  openai/gpt-5.5 • high

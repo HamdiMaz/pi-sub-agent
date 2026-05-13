@@ -81,6 +81,7 @@ interface SingleResult {
 	exitCode: number;
 	messages: RawMessage[];
 	stderr: string;
+	stdout?: string;
 	usage: UsageStats;
 	model?: string;
 	stopReason?: string;
@@ -409,6 +410,7 @@ function formatFailureOutput(result: SingleResult): string {
 	// Keep diagnostics after assistant output because truncateForToolContent() preserves the tail.
 	addDistinctSection(parts, "Output", collectFinalOutput(result.messages));
 	addDistinctSection(parts, "stderr", result.stderr);
+	addDistinctSection(parts, "stdout", result.stdout);
 	addDistinctSection(parts, "Error", result.errorMessage);
 	addDistinctSection(parts, "stopReason", result.stopReason ? `${result.stopReason} (exit code ${result.exitCode})` : undefined);
 	if (result.exitCode !== 0 && !result.stopReason) parts.push(`Exit code:\n${result.exitCode}`);
@@ -418,10 +420,18 @@ function formatFailureOutput(result: SingleResult): string {
 
 function getFailureDiagnostic(result: SingleResult): { label: string; text: string } | undefined {
 	const errorMessage = result.errorMessage?.trim();
-	if (errorMessage) return { label: "Error", text: errorMessage };
-
 	const stderr = result.stderr.trim();
+	const stdout = result.stdout?.trim();
+	if (errorMessage) {
+		const parts = [errorMessage];
+		if (stderr && !stderr.includes(errorMessage)) parts.push(`stderr:\n${stderr}`);
+		if (stdout) parts.push(`stdout:\n${stdout}`);
+		return { label: "Error", text: parts.join("\n\n") };
+	}
+
 	if (stderr) return { label: "stderr", text: stderr };
+
+	if (stdout) return { label: "stdout", text: stdout };
 
 	if (result.stopReason) {
 		return { label: "stopReason", text: `${result.stopReason} (exit code ${result.exitCode})` };
@@ -506,6 +516,7 @@ async function runSingleAgent(
 		exitCode: -1,
 		messages: [],
 		stderr: "",
+		stdout: "",
 		usage: { ...emptyUsage },
 	};
 	if (step !== undefined) {
@@ -552,6 +563,7 @@ async function runSingleAgent(
 				try {
 					event = JSON.parse(trimmed);
 				} catch {
+					result.stdout = result.stdout ? `${result.stdout}\n${line}` : line;
 					return;
 				}
 				if (!isRecord(event)) return;
@@ -634,6 +646,10 @@ async function runSingleAgent(
 		});
 
 		result.exitCode = exitCode;
+		if (result.exitCode === 0 && result.messages.length === 0 && result.stdout?.trim()) {
+			result.exitCode = 1;
+			result.errorMessage = "Subagent produced non-JSON stdout without any JSON messages.";
+		}
 		if (aborted) {
 			result.exitCode = 1;
 			result.stopReason = "aborted";

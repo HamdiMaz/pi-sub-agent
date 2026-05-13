@@ -152,6 +152,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Invalid requests return clear guidance and keep structured result details available to the main agent.
 - Non-zero subprocess exits, `stopReason: "error"`, and `stopReason: "aborted"` are treated as failed subagent runs.
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
+- Malformed child stdout in JSON mode is captured as a diagnostic; if no JSON messages are produced, the run is treated as a failed subagent invocation instead of silently returning `(no output)`.
 - Failed subagent runs are marked as Pi tool errors without dropping streamed output, subprocess diagnostics, or per-agent details.
 - Project-local agents are blocked in non-interactive runs unless `confirmProjectAgents: false` is set.
 - Nested `subagent` calls are blocked before spawning another Pi process.

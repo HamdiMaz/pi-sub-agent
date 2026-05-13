@@ -800,7 +800,7 @@ test("chain renderer marks model error stop reasons as failed steps", () => {
 	assert.match(rendered.text ?? "", /worker ✗/);
 });
 
-test("subagent renderers surface stderr diagnostics for failed results without assistant output", () => {
+test("subagent renderers surface stderr and stdout diagnostics for failed results without assistant output", () => {
 	type Usage = {
 		input: number;
 		output: number;
@@ -817,6 +817,8 @@ test("subagent renderers surface stderr diagnostics for failed results without a
 		exitCode: number;
 		messages: [];
 		stderr: string;
+		stdout?: string;
+		errorMessage?: string;
 		usage: Usage;
 		step?: number;
 	};
@@ -868,6 +870,22 @@ test("subagent renderers surface stderr diagnostics for failed results without a
 		theme,
 	);
 	assert.match(single.text ?? "", /child process failed/);
+
+	const malformedStdout: Result = {
+		...failed,
+		stderr: "",
+		stdout: "child emitted non-json stdout",
+		errorMessage: "Subagent produced non-JSON stdout without any JSON messages.",
+	};
+	const singleMalformed = tool.renderResult(
+		{
+			content: [{ type: "text", text: "stdout:\nchild emitted non-json stdout" }],
+			details: { mode: "single", agentScope: "user", projectAgentsDir: null, results: [malformedStdout] },
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+	);
+	assert.match(singleMalformed.text ?? "", /child emitted non-json stdout/);
 
 	const parallel = tool.renderResult(
 		{
@@ -1438,6 +1456,65 @@ test("single-agent tasks are passed over stdin instead of exposing prompt text i
 				process.argv[1] = originalArgv;
 			}
 		}
+	});
+});
+
+test("single-agent malformed JSON stdout is treated as a failed subagent run", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stdout?: string; exitCode: number }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-malformed-stdout.mjs");
+		await writeFile(
+			fakePi,
+			`console.log("subagent wrapper printed non-json stdout");\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "produce malformed output", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 1);
+				assert.match(result.details.results[0]?.stdout ?? "", /non-json stdout/);
+				assert.match(text, /non-JSON stdout/i);
+				assert.match(text, /subagent wrapper printed non-json stdout/);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
 	});
 });
 

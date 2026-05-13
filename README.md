@@ -111,7 +111,7 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. `model` and `thinking` are optional; when omitted, the subagent is launched with the active parent Pi model and thinking level. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. `model` and `thinking` are optional; when omitted, the subagent is launched with the active parent Pi model and thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that subagent. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
 
 Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
 

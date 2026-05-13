@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 - Loaded agent frontmatter defensively, including YAML-list `tools`, while skipping malformed agent definitions instead of throwing.
 - Removed provider-specific model pins from bundled agents so subagents inherit the active parent Pi model and thinking level unless a custom agent explicitly sets `model`.
 - Parsed legacy `model: provider/model-id:thinking` agent frontmatter into separate model and thinking settings for backwards compatibility.
+- Preserved explicit `thinking: off` sub-agent settings when launching child Pi processes so agents can disable inherited reasoning effort.
 - Reduced the bundled `scout` agent to read-only search tools by removing `bash` from its default allowlist.
 - Surfaced single-agent failure details by combining assistant output, subprocess `stderr`, model error messages, stop reasons, exit codes, and unknown-agent guidance in LLM-facing tool output instead of returning a generic failure message.
 - Reported subprocess launch failures with the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.

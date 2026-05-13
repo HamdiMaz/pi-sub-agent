@@ -52,7 +52,7 @@ export function splitModelThinking(model: string): { model: string; thinking?: A
 export function formatModelWithThinking(model: string | undefined, thinking: AgentThinkingLevel | undefined): string | undefined {
 	if (!model) return undefined;
 	const base = splitModelThinking(model).model;
-	if (!thinking || thinking === "off") return base;
+	if (!thinking) return base;
 	return `${base}:${thinking}`;
 }
 

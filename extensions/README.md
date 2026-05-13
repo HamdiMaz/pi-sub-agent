@@ -60,7 +60,7 @@ System prompt for the agent goes here.
 
 - `name` and `description` are required.
 - `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent. The `subagent` tool is always removed from the child allowlist to avoid recursive delegation.
-- `model` and `thinking` are optional; omit them to inherit the active parent Pi model and thinking level. Legacy `model: provider/model-id:high` values are parsed as a model plus thinking setting.
+- `model` and `thinking` are optional; omit them to inherit the active parent Pi model and thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that sub-agent. Legacy `model: provider/model-id:high` values are parsed as a model plus thinking setting.
 - Agent files with unreadable content, missing required metadata, invalid metadata types, or malformed YAML frontmatter are skipped.
 
 ## Bundled agents

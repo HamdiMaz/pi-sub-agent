@@ -155,7 +155,7 @@ test("discovers agent model thinking suffixes and explicit thinking frontmatter"
 
 test("formats and resolves subagent model thinking overrides", () => {
 	assert.equal(formatModelWithThinking("openai/gpt-5", "high"), "openai/gpt-5:high");
-	assert.equal(formatModelWithThinking("openai/gpt-5", "off"), "openai/gpt-5");
+	assert.equal(formatModelWithThinking("openai/gpt-5", "off"), "openai/gpt-5:off");
 	assert.equal(formatModelWithThinking(undefined, "high"), undefined);
 
 	assert.equal(
@@ -165,6 +165,10 @@ test("formats and resolves subagent model thinking overrides", () => {
 	assert.equal(
 		resolveAgentModel({ thinking: "medium" }, "openai/gpt-5:high"),
 		"openai/gpt-5:medium",
+	);
+	assert.equal(
+		resolveAgentModel({ thinking: "off" }, "openai/gpt-5:high"),
+		"openai/gpt-5:off",
 	);
 	assert.equal(
 		resolveAgentModel({}, "openai/gpt-5:high"),

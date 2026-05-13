@@ -65,3 +65,4 @@ All notable changes to this project will be documented in this file.
 - Documented malformed-agent skipping, recursive-subagent blocking, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
+- Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.

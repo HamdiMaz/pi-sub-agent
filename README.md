@@ -173,6 +173,16 @@ npm run check
 
 `npm publish` runs `npm run check` automatically through `prepublishOnly`.
 
+## Public release readiness
+
+This package follows Pi package conventions for public distribution:
+
+- `package.json` declares an explicit `pi.extensions` entry (`./extensions/index.ts`) so Pi loads only the public extension entry point, not helper modules.
+- Runtime Pi imports (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, and `typebox`) are declared as peer dependencies, matching Pi package guidance.
+- The published npm tarball is limited to `extensions/`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `package.json` via the `files` list.
+- The package intentionally does not publish `prompts/`, `skills/`, or `themes/`; it only registers the `subagent` tool and `/sub-agent-settings` command.
+- Before publishing, run `npm run check` and `npm pack --dry-run` to verify tests, linting, type checking, and packaged files.
+
 Key files:
 
 - `extensions/index.ts` — Pi extension and `subagent` tool implementation.

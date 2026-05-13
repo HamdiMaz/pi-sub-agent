@@ -7,7 +7,9 @@ This directory contains the Pi extension entry point and bundled agents for `pi-
 - A `subagent` tool for delegating work to isolated Pi subprocesses.
 - Bundled default agents from `extensions/agents/`.
 - A `/sub-agent-settings` slash command for configuring sub-agent model and thinking effort.
-- No prompt templates.
+- No prompt templates, skills, or themes.
+
+The npm package uses an explicit `package.json` Pi manifest (`pi.extensions: ["./extensions/index.ts"]`) so Pi loads this entry point only. Helper modules such as `agents.ts` are imported by the entry point and are not treated as standalone extensions.
 
 ## Tool modes
 

@@ -51,6 +51,7 @@ All notable changes to this project will be documented in this file.
 - Trimmed quoted string frontmatter values for agent `name`, `description`, and `model` fields before registration.
 - Marked pre-spawn subagent failures, including invalid mode arguments, nested invocations, project-agent confirmation blocks, and task-limit violations, as Pi tool errors while preserving structured details.
 - Avoided duplicating identical model error messages in LLM-facing failure diagnostics when the same text is already present in child process stderr or stdout.
+- Treated child Pi subprocesses terminated by an external signal as failed subagent runs and surfaced the signal name in diagnostics instead of reporting a successful empty result.
 
 ### Chores
 

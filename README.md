@@ -158,6 +158,7 @@ The text returned to the main model is truncated from the tail at Pi's default t
 - Nested `subagent` calls are blocked before spawning another Pi process.
 - Chain mode is capped at 8 steps and stops at the first failed step with diagnostic output; parallel mode reports per-task success and failure counts with failure diagnostics.
 - Aborts propagate to child processes with `SIGTERM` and escalate to `SIGKILL` after 5 seconds if the subprocess does not exit.
+- Child Pi processes terminated by an external signal are treated as failed runs and include the signal name in diagnostics.
 
 ## Troubleshooting
 

@@ -1616,6 +1616,65 @@ test("single-agent malformed JSON stdout is treated as a failed subagent run", a
 	});
 });
 
+test("single-agent signal terminations are treated as failed subagent runs", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number; errorMessage?: string }> } };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-signal.mjs");
+		await writeFile(
+			fakePi,
+			`process.kill(process.pid, "SIGTERM");\n`,
+			"utf8",
+		);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ agent: "worker", task: "terminate by signal", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const text = result.content[0]?.text ?? "";
+				assert.equal(result.details.results[0]?.exitCode, 1);
+				assert.match(result.details.results[0]?.stderr ?? "", /SIGTERM/);
+				assert.match(result.details.results[0]?.errorMessage ?? "", /SIGTERM/);
+				assert.match(text, /SIGTERM/);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
 test("single-agent failures surface subprocess stderr in LLM-facing content", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stderr: string; exitCode: number }> } };

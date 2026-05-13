@@ -554,7 +554,7 @@ async function runSingleAgent(
 			args.push("--append-system-prompt", file.filePath);
 		}
 
-		const exitCode = await new Promise<number>((resolve) => {
+		const exit = await new Promise<{ code: number; signal: NodeJS.Signals | null }>((resolve) => {
 			const invocation = getPiInvocation(args);
 			const childEnv = { ...process.env, [SUBAGENT_DEPTH_ENV]: String(childSubagentDepth) };
 			const proc = spawn(invocation.command, invocation.args, {
@@ -634,7 +634,7 @@ async function runSingleAgent(
 				}
 			}
 
-			proc.on("close", (code) => {
+			proc.on("close", (code, signalName) => {
 				closed = true;
 				if (killTimer) {
 					clearTimeout(killTimer);
@@ -645,18 +645,21 @@ async function runSingleAgent(
 					signal.removeEventListener("abort", abortListener);
 					abortListener = null;
 				}
-				resolve(code ?? 0);
+				resolve({ code: code ?? (signalName ? 1 : 0), signal: signalName });
 			});
 			proc.on("error", (error) => {
 				const detail = error instanceof Error ? error.message : String(error);
 				const diagnostic = `Failed to start subagent process (${invocation.command}): ${detail}`;
 				result.stderr = result.stderr ? `${result.stderr}\n${diagnostic}` : diagnostic;
 				result.errorMessage = diagnostic;
-				resolve(1);
+				resolve({ code: 1, signal: null });
 			});
 		});
 
-		result.exitCode = exitCode;
+		result.exitCode = exit.code;
+		if (exit.signal && !aborted) {
+			result.errorMessage = `Subagent process terminated by signal ${exit.signal}.`;
+		}
 		if (result.exitCode === 0 && result.messages.length === 0 && result.stdout?.trim()) {
 			result.exitCode = 1;
 			result.errorMessage = "Subagent produced non-JSON stdout without any JSON messages.";

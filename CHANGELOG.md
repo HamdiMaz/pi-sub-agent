@@ -53,6 +53,8 @@ All notable changes to this project will be documented in this file.
 - Avoided duplicating identical model error messages in LLM-facing failure diagnostics when the same text is already present in child process stderr or stdout.
 - Treated child Pi subprocesses terminated by an external signal as failed subagent runs and surfaced the signal name in diagnostics instead of reporting a successful empty result.
 - Treated child assistant `stopReason: "length"` responses as failed incomplete subagent runs so truncated model outputs do not pass as successful handoffs.
+- Rejected partial or mixed subagent mode arguments before spawning child Pi processes, including top-level `cwd` on parallel or chain requests.
+- Fixed compact path rendering so paths that merely share the home-directory prefix, such as `/home/user-other`, are not incorrectly abbreviated as `~` paths.
 
 ### Chores
 
@@ -77,3 +79,4 @@ All notable changes to this project will be documented in this file.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.
 - Documented public-release readiness checks, explicit Pi package manifest behavior, peer dependency conventions, and expected npm tarball contents.
 - Added an explicit release verification checklist to the public README covering tests, linting, type checking, the aggregate check script, production dependency audit, and npm tarball dry-run review.
+- Documented that invalid partial or mixed subagent mode arguments are rejected before child Pi processes are spawned.

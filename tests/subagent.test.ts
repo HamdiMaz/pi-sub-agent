@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { access, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -358,6 +358,122 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 		const resources = handler({ cwd: process.cwd(), reason: "startup" }, {});
 		assert.equal(resources?.promptPaths?.length ?? 0, 0);
 	}
+});
+
+test("subagent tool rejects partial or mixed mode arguments before spawning", async () => {
+	type ToolResult = { content: Array<{ type: "text"; text: string }>; details: { results: unknown[]; error?: string } };
+	type ExecutableTool = {
+		execute: (
+			toolCallId: string,
+			params: { agent?: string; task?: string; tasks?: Array<{ agent: string; task: string }>; chain?: Array<{ agent: string; task: string }>; cwd?: string },
+			signal: AbortSignal | undefined,
+			onUpdate: undefined,
+			ctx: { cwd: string; hasUI: false },
+		) => Promise<ToolResult>;
+	};
+
+	const tools: Array<{ execute?: unknown }> = [];
+	const pi = {
+		on() {},
+		registerTool(tool: { execute?: unknown }) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0] as ExecutableTool | undefined;
+	assert.ok(tool);
+
+	for (const params of [
+		{ agent: "worker" },
+		{ task: "do work" },
+		{ agent: "worker", task: "do work", tasks: [{ agent: "worker", task: "other work" }] },
+		{ tasks: [{ agent: "worker", task: "do work" }], cwd: "packages/app" },
+		{ chain: [{ agent: "worker", task: "do work" }], cwd: "packages/app" },
+	]) {
+		const result = await tool.execute("tool-call-1", params, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+		assert.match(result.content[0]?.text ?? "", /Invalid subagent arguments/i);
+		assert.deepEqual(result.details.results, []);
+	}
+});
+
+test("subagent path rendering only abbreviates real home-directory paths", () => {
+	type ToolRecord = {
+		renderCall?: (
+			args: { agent: string; task: string },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+		renderResult?: (
+			result: {
+				content: Array<{ type: "text"; text: string }>;
+				details: {
+					mode: "single";
+					agentScope: "user";
+					projectAgentsDir: null;
+					results: Array<{
+						agent: string;
+						agentSource: "extension";
+						task: string;
+						exitCode: number;
+						messages: Array<{
+							role: "assistant";
+							content: Array<{ type: "toolCall"; name: "read"; arguments: { path: string } }>;
+						}>;
+						stderr: string;
+						usage: {
+							input: number;
+							output: number;
+							cacheRead: number;
+							cacheWrite: number;
+							cost: number;
+							contextTokens: number;
+							turns: number;
+						};
+					}>;
+				};
+			},
+			options: { expanded: false; isPartial: false },
+			theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+		) => { text?: string };
+	};
+
+	const tools: ToolRecord[] = [];
+	const pi = {
+		on() {},
+		registerTool(tool: ToolRecord) {
+			tools.push(tool);
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	const tool = tools[0];
+	assert.ok(tool?.renderResult);
+
+	const siblingPath = `${homedir()}-sibling/project/README.md`;
+	const rendered = tool.renderResult(
+		{
+			content: [{ type: "text", text: "ok" }],
+			details: {
+				mode: "single",
+				agentScope: "user",
+				projectAgentsDir: null,
+				results: [
+					{
+						agent: "worker",
+						agentSource: "extension",
+						task: "read a path",
+						exitCode: 0,
+						messages: [{ role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: siblingPath } }] }],
+						stderr: "",
+						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+					},
+				],
+			},
+		},
+		{ expanded: false, isPartial: false },
+		{ fg: (_color, text) => text, bold: (text) => text },
+	);
+
+	assert.match(rendered.text ?? "", new RegExp(escapeRegExp(siblingPath)));
+	assert.doesNotMatch(rendered.text ?? "", /~-sibling/);
 });
 
 test("settings command reports that interactive UI is required in non-interactive modes", async () => {

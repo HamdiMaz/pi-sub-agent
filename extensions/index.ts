@@ -7,7 +7,7 @@
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -143,7 +143,8 @@ function formatAggregateUsageStats(results: SingleResult[]): string {
 
 function shortenPath(filePath: string): string {
 	const home = os.homedir();
-	return filePath.startsWith(home) ? `~${filePath.slice(home.length)}` : filePath;
+	if (filePath === home) return "~";
+	return filePath.startsWith(`${home}${sep}`) ? `~${filePath.slice(home.length)}` : filePath;
 }
 
 function formatToolCall(
@@ -947,13 +948,17 @@ export default function (pi: ExtensionAPI): void {
 				...(error ? { error } : {}),
 			});
 
-			const hasSingle = Boolean(params.agent && params.task);
+			const hasAgent = params.agent !== undefined;
+			const hasTask = params.task !== undefined;
+			const hasSingle = hasAgent && hasTask;
+			const hasPartialSingle = hasAgent !== hasTask;
 			const hasParallel = (params.tasks?.length ?? 0) > 0;
 			const hasChain = (params.chain?.length ?? 0) > 0;
+			const hasTopLevelCwd = params.cwd !== undefined;
 			const modeCount = Number(hasSingle) + Number(hasParallel) + Number(hasChain);
 
-			if (modeCount !== 1) {
-				const error = "Invalid subagent arguments. Use exactly one of: {agent,task} or {tasks} or {chain}.";
+			if (modeCount !== 1 || hasPartialSingle || ((hasParallel || hasChain) && hasTopLevelCwd)) {
+				const error = "Invalid subagent arguments. Use exactly one of: {agent,task,cwd?} or {tasks} or {chain}.";
 				return {
 					content: [
 						{

@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
 ## v0.1.0
 
 ### Added
@@ -12,7 +14,7 @@ All notable changes to this project will be documented in this file.
 - Added streaming progress updates, structured result details, usage tracking, abort handling, subprocess error handling, and temporary prompt-file cleanup.
 - Added agent discovery for bundled extension agents, user agents from `~/.pi/agent/agents`, and optional project agents from `.pi/agents`.
 - Added safety confirmation for project-local agents when running with UI support.
-- Bundled default agents: `scout`, `planner`, `reviewer`, and `worker`.
+- Bundled default agents: `scout`, `planner`, `worker`, `reviewer`, `debugger`, `verifier`, `security-auditor`, `docs-writer`, and `refactorer`.
 - Added extension documentation covering usage, security model, output display, agent definitions, error handling, and limitations.
 - Added the `/sub-agent-settings` slash command for viewing and editing sub-agent model and thinking-effort settings.
 - Added optional `thinking` frontmatter support for sub-agent definitions, with `inherit` behavior for parent-session model and thinking settings.
@@ -37,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Parsed legacy `model: provider/model-id:thinking` agent frontmatter into separate model and thinking settings for backwards compatibility.
 - Preserved explicit `thinking: off` sub-agent settings when launching child Pi processes so agents can disable inherited reasoning effort.
 - Reduced the bundled `scout` agent to read-only search tools by removing `bash` from its default allowlist.
+- Tightened bundled `reviewer` and `security-auditor` to read-only search tools, while `debugger` and `verifier` retain `bash` for diagnostics and verification commands.
 - Surfaced single-agent failure details by combining assistant output, subprocess `stderr`, model error messages, stop reasons, exit codes, and unknown-agent guidance in LLM-facing tool output instead of returning a generic failure message.
 - Reported subprocess launch failures with the attempted command and OS error so missing `pi` executables or wrapper misconfiguration are actionable.
 - Surfaced subprocess stderr/error diagnostics in compact and expanded interactive subagent renderers when failed runs produce no assistant output.
@@ -70,7 +73,7 @@ All notable changes to this project will be documented in this file.
 - Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.
 - Removed bundled workflow prompt templates so the package does not create slash commands.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, parent-model/tool inheritance, recursive-subagent blocking, invalid `cwd` diagnostics, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, private full-output temp files for truncated content, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, trimmed agent frontmatter strings, bundled specialist-agent coverage/tool policy, parent-model/tool inheritance, recursive-subagent blocking, invalid `cwd` diagnostics, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent/parallel/chain failure output, subprocess launch diagnostics, private full-output temp files for truncated content, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
 - Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, non-interactive project-agent confirmation behavior, and `/sub-agent-settings` usage.

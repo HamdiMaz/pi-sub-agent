@@ -37,7 +37,7 @@ Each subagent runs `pi --mode json -p --no-session` with the selected agent's sy
 ## Delegation best practices
 
 - Give each subagent a complete task statement with the goal, constraints, expected output, and known file paths.
-- Use `scout` for discovery, `planner` for read-only planning, `reviewer` for focused review, and `worker` for implementation tasks that benefit from isolated context.
+- Use `scout` for discovery, `planner` for read-only planning, `worker` for implementation, `reviewer` for focused review, `debugger` for failures, `verifier` for evidence-gathering checks, `security-auditor` for threat-focused review, `docs-writer` for documentation updates, and `refactorer` for behavior-preserving cleanup.
 - Use parallel mode only for independent tasks; use chain mode only when a later step genuinely needs `{previous}` from the prior step.
 - Keep chained outputs compact because only the prior final text is inserted into the next task. Full messages remain in structured `details` for rendering and follow-up analysis.
 - Keep `agentScope` at `"user"` unless you have reviewed and trust project-local agents.
@@ -69,7 +69,7 @@ System prompt for the agent goes here.
 ```
 
 - `name` and `description` are required.
-- `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent. The `subagent` tool is always removed from the child allowlist to avoid recursive delegation. Because agent tool lists cannot enable tools disabled in the parent session, enable Pi's read-only `grep`, `find`, and `ls` tools in the parent when you want read-only bundled agents to use repository search.
+- `tools` is optional and can be a comma-separated string or YAML list. Omit it to inherit the parent Pi session's active tools; specify it to narrow those tools for that agent. The `subagent` tool is always removed from the child allowlist to avoid recursive delegation. Because agent tool lists cannot enable tools disabled in the parent session, enable Pi's read-only `grep`, `find`, and `ls` tools in the parent when you want read-only bundled agents to use repository search. `debugger` and `verifier` also request `bash` for diagnostic and verification commands. `worker`, `docs-writer`, and `refactorer` inherit the parent active tools for implementation-oriented edits.
 - `model` and `thinking` are optional and inherit independently. An agent with a custom `model` but no `thinking` still uses the parent Pi session's thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that sub-agent. Legacy `model: provider/model-id:high` values are parsed as a model plus thinking setting.
 - Agent files with unreadable content, missing required metadata, invalid metadata types, or malformed YAML frontmatter are skipped.
 
@@ -78,9 +78,14 @@ System prompt for the agent goes here.
 | Agent | Purpose | Tools |
 | --- | --- | --- |
 | `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls` |
-| `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
-| `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
+| `planner` | Read-only implementation planning with acceptance criteria and verification steps. | `read`, `grep`, `find`, `ls` |
 | `worker` | General-purpose implementation in an isolated context. | Parent active tools |
+| `reviewer` | Read-only code quality, correctness, and maintainability review. | `read`, `grep`, `find`, `ls` |
+| `debugger` | Systematic root-cause investigation for failures and regressions. | `read`, `grep`, `find`, `ls`, `bash` |
+| `verifier` | Runs checks and reports evidence before completion claims. | `read`, `grep`, `find`, `ls`, `bash` |
+| `security-auditor` | Read-only security review of trust boundaries and unsafe behavior. | `read`, `grep`, `find`, `ls` |
+| `docs-writer` | Documentation updates grounded in code and existing docs. | Parent active tools |
+| `refactorer` | Behavior-preserving cleanup and simplification. | Parent active tools |
 
 ## Slash command
 

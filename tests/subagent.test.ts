@@ -2885,19 +2885,49 @@ test("single-agent results truncate LLM-facing content, save full output, and re
 	});
 });
 
-test("bundled agents inherit the active Pi model and minimize tool access unless users override them", async () => {
+test("bundled agents include the documented specialist set with conservative tool access", async () => {
 	const agentDir = join("extensions", "agents");
-	const files = (await readdir(agentDir)).filter((file) => file.endsWith(".md"));
-	assert.ok(files.length > 0);
+	const files = (await readdir(agentDir)).filter((file) => file.endsWith(".md")).sort();
+	assert.deepEqual(files, [
+		"debugger.md",
+		"docs-writer.md",
+		"planner.md",
+		"refactorer.md",
+		"reviewer.md",
+		"scout.md",
+		"security-auditor.md",
+		"verifier.md",
+		"worker.md",
+	]);
+
 	for (const file of files) {
 		const content = await readFile(join(agentDir, file), "utf8");
 		assert.doesNotMatch(content, /^model:/m, `${file} should not pin a provider-specific model`);
 	}
 
 	const discovery = discoverAgents(process.cwd(), "project", agentDir);
-	const scout = discovery.agents.find((agent) => agent.name === "scout");
-	assert.ok(scout);
-	assert.ok(!scout.tools?.includes("bash"), "scout should use read-only search tools instead of bash");
+	const byName = new Map(discovery.agents.map((agent) => [agent.name, agent]));
+	assert.deepEqual([...byName.keys()].sort(), [
+		"debugger",
+		"docs-writer",
+		"planner",
+		"refactorer",
+		"reviewer",
+		"scout",
+		"security-auditor",
+		"verifier",
+		"worker",
+	]);
+
+	for (const readOnlyName of ["scout", "planner", "reviewer", "security-auditor"] as const) {
+		assert.deepEqual(byName.get(readOnlyName)?.tools, ["read", "grep", "find", "ls"], `${readOnlyName} should stay read-only`);
+	}
+	for (const investigativeName of ["debugger", "verifier"] as const) {
+		assert.deepEqual(byName.get(investigativeName)?.tools, ["read", "grep", "find", "ls", "bash"], `${investigativeName} should be allowed to run diagnostic commands`);
+	}
+	assert.equal(byName.get("worker")?.tools, undefined, "worker should inherit parent tools for implementation tasks");
+	assert.equal(byName.get("docs-writer")?.tools, undefined, "docs-writer should inherit parent tools for documentation edits");
+	assert.equal(byName.get("refactorer")?.tools, undefined, "refactorer should inherit parent tools for refactoring edits");
 });
 
 test("does not bundle workflow prompt templates that become slash commands", async () => {

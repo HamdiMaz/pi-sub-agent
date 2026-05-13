@@ -6,7 +6,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 
 - Runs each delegated task in a separate `pi --mode json -p --no-session` subprocess.
 - Supports **single**, **parallel**, and **chain** modes.
-- Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
+- Bundles default `scout`, `planner`, `worker`, `reviewer`, `debugger`, `verifier`, `security-auditor`, `docs-writer`, and `refactorer` agents.
 - Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
 - Provides `/sub-agent-settings` to view and edit each sub-agent's model and thinking effort.
 - Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
@@ -82,7 +82,7 @@ Parallel mode is limited to 8 tasks total, with up to 4 running at once. Chain m
 ### Delegation best practices
 
 - Keep each delegated task self-contained: include the goal, relevant constraints, expected output, and any file paths already known.
-- Prefer `scout` for broad repository discovery, `planner` for read-only implementation plans, `reviewer` for focused code review, and `worker` only when an isolated implementation context is useful.
+- Prefer `scout` for discovery, `planner` for read-only plans, `worker` for implementation, `reviewer` for code review, `debugger` for failures, `verifier` for evidence-gathering checks, `security-auditor` for threat-focused review, `docs-writer` for documentation updates, and `refactorer` for behavior-preserving cleanup.
 - Use parallel mode for independent research tasks; use chain mode only when each step needs the previous step's output.
 - Keep chain handoffs concise. The full subagent details remain available in the tool result, but the next subagent only receives the previous final text through `{previous}`.
 - Review project-local agents before enabling `agentScope: "project"` or `"both"`, especially in repositories you did not create.
@@ -119,9 +119,23 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. Pi's read-only `grep`, `find`, and `ls` tools may be disabled in the parent session by default; enable them in the parent tool allowlist when you want bundled read-only agents such as `scout` and `planner` to use repository search. `model` and `thinking` are optional and inherit independently: an agent with a custom `model` but no `thinking` still uses the parent session's thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that subagent. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. Pi's read-only `grep`, `find`, and `ls` tools may be disabled in the parent session by default; enable them in the parent tool allowlist when you want bundled read-only agents such as `scout`, `planner`, `reviewer`, and `security-auditor` to use repository search. `debugger` and `verifier` additionally request `bash` for diagnostics and checks. Implementation-oriented bundled agents (`worker`, `docs-writer`, and `refactorer`) omit `tools` so they inherit the parent session's active tools. `model` and `thinking` are optional and inherit independently: an agent with a custom `model` but no `thinking` still uses the parent session's thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that subagent. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
 
 Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
+
+## Bundled agents
+
+| Agent | Purpose | Tools |
+| --- | --- | --- |
+| `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls` |
+| `planner` | Read-only implementation planning with acceptance criteria and verification steps. | `read`, `grep`, `find`, `ls` |
+| `worker` | General-purpose implementation using isolated context. | Parent active tools |
+| `reviewer` | Read-only code quality, correctness, and maintainability review. | `read`, `grep`, `find`, `ls` |
+| `debugger` | Systematic root-cause investigation for failures and regressions. | `read`, `grep`, `find`, `ls`, `bash` |
+| `verifier` | Runs checks and reports evidence before completion claims. | `read`, `grep`, `find`, `ls`, `bash` |
+| `security-auditor` | Read-only security review of trust boundaries and unsafe behavior. | `read`, `grep`, `find`, `ls` |
+| `docs-writer` | Documentation updates grounded in code and existing docs. | Parent active tools |
+| `refactorer` | Behavior-preserving cleanup and simplification. | Parent active tools |
 
 | Scope | Loaded agents |
 | --- | --- |

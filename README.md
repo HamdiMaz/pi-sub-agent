@@ -5,7 +5,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 ## Highlights
 
 - Runs each delegated task in a separate `pi --mode json -p --no-session` subprocess.
-- Supports **single**, **parallel**, and **chain** workflows.
+- Supports **single**, **parallel**, and **chain** modes.
 - Bundles default `scout`, `planner`, `reviewer`, and `worker` agents.
 - Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
 - Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
@@ -13,7 +13,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB) while preserving full structured details for rendering.
 - Prevents recursive subagent fan-out by removing the `subagent` tool from child allowlists and blocking nested subagent invocations.
 - Requires confirmation before running project-local agents; non-interactive runs must explicitly set `confirmProjectAgents: false`.
-- Includes prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
+- Does not register slash commands or prompt templates.
 
 ## Requirements
 
@@ -164,5 +164,4 @@ Key files:
 - `extensions/index.ts` — Pi extension and `subagent` tool implementation.
 - `extensions/agents.ts` — agent discovery and frontmatter loading.
 - `extensions/agents/*.md` — bundled default agents.
-- `extensions/prompts/*.md` — workflow prompt templates.
 - `tests/subagent.test.ts` — regression tests for discovery, Pi tool conventions, and package metadata.

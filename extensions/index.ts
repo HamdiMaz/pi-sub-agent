@@ -696,7 +696,6 @@ const SubagentParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI): void {
-	pi.on("resources_discover", () => ({ promptPaths: [join(extensionDir, "prompts")] }));
 	pi.on("tool_result", (event) => {
 		if (event.toolName !== "subagent") return;
 		if (!hasFailedSubagentResult(event.details)) return;
@@ -714,7 +713,7 @@ export default function (pi: ExtensionAPI): void {
 			'Bundled default agents are always available; user agents are used by default from ~/.pi/agent/agents.',
 			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
 		].join(" "),
-		promptSnippet: "Delegate work to specialized subagents in isolated Pi processes; supports single, parallel, and chain workflows.",
+		promptSnippet: "Delegate work to specialized subagents in isolated Pi processes; supports single, parallel, and chain modes.",
 		promptGuidelines: [
 			"Use subagent when a task benefits from isolated context, parallel research, or specialized bundled/user/project agents.",
 			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,

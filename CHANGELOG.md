@@ -8,13 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - Created the initial `pi-sub-agent` package with MIT license, README, `package.json`, `package-lock.json`, TypeScript configuration, ESLint configuration, and npm verification scripts.
 - Added the Pi extension entry point and registered a `subagent` tool for delegating work to isolated `pi` subprocesses.
-- Added support for single-agent, parallel, and chained subagent workflows, including `{previous}` handoff support for chains.
+- Added support for single-agent, parallel, and chained subagent modes, including `{previous}` handoff support for chains.
 - Added streaming progress updates, structured result details, usage tracking, abort handling, subprocess error handling, and temporary prompt-file cleanup.
 - Added agent discovery for bundled extension agents, user agents from `~/.pi/agent/agents`, and optional project agents from `.pi/agents`.
 - Added safety confirmation for project-local agents when running with UI support.
 - Bundled default agents: `scout`, `planner`, `reviewer`, and `worker`.
-- Added workflow prompt templates: `/implement`, `/scout-and-plan`, and `/implement-and-review`.
-- Added extension documentation covering usage, security model, output display, agent definitions, workflow prompts, error handling, and limitations.
+- Added extension documentation covering usage, security model, output display, agent definitions, error handling, and limitations.
 
 ### Fixed
 
@@ -50,14 +49,14 @@ All notable changes to this project will be documented in this file.
 - Added custom `subagent` prompt snippets, prompt guidelines, and interactive tool renderers for compact/expanded subagent output.
 - Fixed streaming update snapshots so active subprocesses stay marked as running until their final exit code is known.
 - Switched `agentScope` to a Google-compatible `StringEnum` schema and declared Pi runtime imports as peer dependencies.
-- Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development workflows.
-- Declared the explicit extension entrypoint and bundled workflow prompts in the Pi package manifest so Pi can discover package resources without treating helper modules as extensions.
-- Added `argument-hint` metadata to bundled workflow prompt templates for clearer slash-command autocomplete.
+- Included `CHANGELOG.md` in the published package files and documented release-ready installation, usage, security, and development commands.
+- Declared the explicit extension entrypoint in the Pi package manifest so Pi can discover the public extension without treating helper modules as extensions.
+- Removed bundled workflow prompt templates so the package does not create slash commands.
 - Cleaned up agent loader formatting while keeping discovery behavior unchanged.
-- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model/tool inheritance, recursive-subagent blocking, prompt autocomplete metadata, final assistant text aggregation, empty/final-empty chain handoffs, single-agent and chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
+- Added regression coverage for abort escalation, keybinding-aware renderer hints, YAML-list agent tools, parent-model/tool inheritance, recursive-subagent blocking, absence of bundled slash-command resources, final assistant text aggregation, empty/final-empty chain handoffs, single-agent and chain failure output, subprocess launch diagnostics, and explicit package entrypoint metadata.
 - Isolated parent-model inheritance, single-agent failure-output, and unknown-agent tests from developer-local Pi agent directories.
 - Tightened the `subagent` tool schema with non-empty string constraints, parallel task item limits, and an 8-step chain limit for clearer model-facing metadata and bounded subprocess usage.
-- Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, prompt autocomplete behavior, stdin prompt delivery, and non-interactive project-agent confirmation behavior.
+- Expanded public and extension documentation with requirements, parameter references, rendering behavior, abort semantics, agent model/thinking inheritance, parent tool allowlist inheritance, YAML-list tool frontmatter, stdin prompt delivery, and non-interactive project-agent confirmation behavior.
 - Documented malformed-agent skipping, recursive-subagent blocking, and clarified that child subagent processes still follow Pi's standard package/extension security model for their selected working directory.
 - Added public npm metadata for repository, issue tracker, homepage, and the Pi-aligned Node.js engine requirement.
 - Added a `prepublishOnly` guard that runs the full verification suite before `npm publish`.

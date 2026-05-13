@@ -1,12 +1,12 @@
 # Subagent Extension
 
-This directory contains the Pi extension entry point, bundled agents, and workflow prompt templates for `pi-sub-agent`.
+This directory contains the Pi extension entry point and bundled agents for `pi-sub-agent`.
 
 ## What the extension registers
 
 - A `subagent` tool for delegating work to isolated Pi subprocesses.
-- Prompt templates from `extensions/prompts/` through the `resources_discover` event.
 - Bundled default agents from `extensions/agents/`.
+- No slash commands or prompt templates.
 
 ## Tool modes
 
@@ -69,14 +69,6 @@ System prompt for the agent goes here.
 | `planner` | Read-only implementation planning. | `read`, `grep`, `find`, `ls` |
 | `reviewer` | Read-only code quality and security review. | `read`, `grep`, `find`, `ls`, `bash` |
 | `worker` | General-purpose implementation in an isolated context. | Parent active tools |
-
-## Workflow prompt templates
-
-| Prompt | Flow |
-| --- | --- |
-| `/implement <request>` | `scout` → `planner` → `worker` |
-| `/scout-and-plan <request>` | `scout` → `planner` |
-| `/implement-and-review <request>` | `worker` → `reviewer` → `worker` |
 
 ## Output and rendering
 

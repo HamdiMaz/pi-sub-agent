@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -150,7 +150,7 @@ test("discovers agents with YAML list tools and skips invalid or malformed front
 	});
 });
 
-test("registers a Pi-conventional subagent tool and bundled prompt resources", () => {
+test("registers a Pi-conventional subagent tool without bundled slash-command resources", () => {
 	type ToolRecord = {
 		name?: unknown;
 		description?: unknown;
@@ -206,10 +206,11 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	type ResourceHandler = (
 		event: { cwd: string; reason: "startup" | "reload" },
 		ctx: unknown,
-	) => { promptPaths: string[] };
+	) => { promptPaths?: string[] } | undefined;
 
 	const tools: ToolRecord[] = [];
 	const resourceHandlers: ResourceHandler[] = [];
+	const registeredCommands: string[] = [];
 	const pi = {
 		on(event: string, handler: unknown) {
 			if (event === "resources_discover") {
@@ -218,6 +219,9 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 		},
 		registerTool(tool: ToolRecord) {
 			tools.push(tool);
+		},
+		registerCommand(name: string) {
+			registeredCommands.push(name);
 		},
 	};
 
@@ -258,14 +262,11 @@ test("registers a Pi-conventional subagent tool and bundled prompt resources", (
 	assert.equal(agentScope.anyOf, undefined);
 	assert.equal(tool.parameters?.properties?.confirmProjectAgents?.default, true);
 
-	assert.equal(resourceHandlers.length, 1);
-	const handler = resourceHandlers[0];
-	assert.ok(handler);
-	const resources = handler({ cwd: process.cwd(), reason: "startup" }, {});
-	assert.equal(resources.promptPaths.length, 1);
-	const promptPath = resources.promptPaths[0];
-	assert.ok(promptPath);
-	assert.match(promptPath, /extensions\/prompts$/);
+	assert.deepEqual(registeredCommands, []);
+	for (const handler of resourceHandlers) {
+		const resources = handler({ cwd: process.cwd(), reason: "startup" }, {});
+		assert.equal(resources?.promptPaths?.length ?? 0, 0);
+	}
 });
 
 test("marks failed subagent tool results as Pi tool errors without dropping details", () => {
@@ -2103,15 +2104,9 @@ test("bundled agents inherit the active Pi model and minimize tool access unless
 	assert.ok(!scout.tools?.includes("bash"), "scout should use read-only search tools instead of bash");
 });
 
-test("workflow prompt templates include autocomplete metadata", async () => {
+test("does not bundle workflow prompt templates that become slash commands", async () => {
 	const promptDir = join("extensions", "prompts");
-	const files = (await readdir(promptDir)).filter((file) => file.endsWith(".md"));
-	assert.deepEqual(files.sort(), ["implement-and-review.md", "implement.md", "scout-and-plan.md"]);
-	for (const file of files) {
-		const content = await readFile(join(promptDir, file), "utf8");
-		assert.match(content, /^description: .+$/m, `${file} should include a description`);
-		assert.match(content, /^argument-hint: "<request>"$/m, `${file} should include an argument hint`);
-	}
+	await assert.rejects(access(promptDir), /ENOENT/);
 });
 
 test("package manifest declares public Pi package runtime and release metadata", async () => {
@@ -2137,5 +2132,5 @@ test("package manifest declares public Pi package runtime and release metadata",
 	assert.ok(pkg.scripts.test);
 	assert.equal(pkg.scripts.prepublishOnly, "npm run check");
 	assert.deepEqual(pkg.pi.extensions, ["./extensions/index.ts"]);
-	assert.deepEqual(pkg.pi.prompts, ["./extensions/prompts"]);
+	assert.equal(pkg.pi.prompts, undefined);
 });

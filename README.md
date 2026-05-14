@@ -97,9 +97,9 @@ Parallel mode is limited to 8 tasks total, with up to 4 running at once. Chain m
 | `chain` | Chain | Array of `{ agent, task, cwd? }` steps, maximum 8. `{previous}` is replaced with the prior step's final output. |
 | `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. Bundled agents are always available. |
 | `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. In non-interactive runs, project-local agents are blocked unless this is explicitly set to `false`. |
-| `cwd` | Single | Working directory override for the single-agent subprocess. |
+| `cwd` | All | Default working directory override for every subprocess in the call; per-task or per-step `cwd` overrides it. |
 
-`cwd` overrides on single, parallel, or chain tasks are resolved relative to the parent Pi working directory. A leading `@` is accepted and stripped, matching Pi file-reference conventions.
+`cwd` overrides on single calls, top-level parallel/chain calls, or individual parallel/chain tasks are resolved relative to the parent Pi working directory. A leading `@` is accepted and stripped, matching Pi file-reference conventions.
 
 ## Agent files
 

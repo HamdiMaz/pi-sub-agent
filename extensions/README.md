@@ -30,9 +30,9 @@ Each subagent runs `pi --mode json -p --no-session` with the selected agent's sy
 | `chain` | Chain | Array of `{ agent, task, cwd? }`, maximum 8; `{previous}` is replaced with prior output. |
 | `agentScope` | All | `"user"` by default; use `"project"` or `"both"` only for trusted repositories. |
 | `confirmProjectAgents` | All | Defaults to `true`; prompts when UI is available and blocks project-local agents in non-interactive runs unless explicitly set to `false`. |
-| `cwd` | Single | Default working directory override for the subprocess. |
+| `cwd` | All | Default working directory override for every subprocess in the call; per-task or per-step `cwd` overrides it. |
 
-`cwd` overrides are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
+`cwd` overrides on single calls, top-level parallel/chain calls, or individual parallel/chain tasks are resolved relative to the parent Pi working directory. A leading `@` is stripped so file-reference-style paths such as `@packages/app` work as expected.
 
 ## Delegation best practices
 

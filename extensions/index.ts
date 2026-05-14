@@ -776,7 +776,7 @@ const SubagentParams = Type.Object({
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1, maxItems: MAX_CHAIN_STEPS })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents", default: true })),
-	cwd: Type.Optional(Type.String({ description: "Default working directory for single mode", minLength: 1 })),
+	cwd: Type.Optional(Type.String({ description: "Default working directory for single, parallel, and chain modes. Per-task or per-step cwd overrides this default.", minLength: 1 })),
 });
 
 const INHERIT = "inherit";
@@ -972,6 +972,7 @@ export default function (pi: ExtensionAPI): void {
 			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
 			...BUNDLED_AGENT_SELECTION_GUIDANCE,
 			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,
+			"Use exactly one argument mode: single {agent, task, cwd?}, parallel {tasks, cwd?}, or chain {chain, cwd?}. Top-level cwd is a default for every subagent run in the call; per-task or per-step cwd overrides it.",
 			'Use subagent with agentScope "project" or "both" only for trusted repositories because project agents are repo-controlled prompts.',
 			"Use subagent chain tasks with {previous} only when each step should consume the previous agent output.",
 			"Do not ask subagent-launched agents to call subagent again; recursive delegation is blocked.",
@@ -999,11 +1000,10 @@ export default function (pi: ExtensionAPI): void {
 			const hasPartialSingle = hasAgent !== hasTask;
 			const hasParallel = (params.tasks?.length ?? 0) > 0;
 			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTopLevelCwd = params.cwd !== undefined;
 			const modeCount = Number(hasSingle) + Number(hasParallel) + Number(hasChain);
 
-			if (modeCount !== 1 || hasPartialSingle || ((hasParallel || hasChain) && hasTopLevelCwd)) {
-				const error = "Invalid subagent arguments. Use exactly one of: {agent,task,cwd?} or {tasks} or {chain}.";
+			if (modeCount !== 1 || hasPartialSingle) {
+				const error = "Invalid subagent arguments. Use exactly one of: {agent,task,cwd?}, {tasks,cwd?}, or {chain,cwd?}.";
 				return {
 					content: [
 						{
@@ -1094,7 +1094,7 @@ export default function (pi: ExtensionAPI): void {
 						agents,
 						step.agent,
 						task,
-						step.cwd,
+						step.cwd ?? params.cwd,
 						parentModel,
 						parentActiveTools,
 						childSubagentDepth,
@@ -1170,7 +1170,7 @@ export default function (pi: ExtensionAPI): void {
 						agents,
 						task.agent,
 						task.task,
-						task.cwd,
+						task.cwd ?? params.cwd,
 						parentModel,
 						parentActiveTools,
 						childSubagentDepth,

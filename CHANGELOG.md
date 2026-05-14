@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.1.3
+
+### Changed
+
+- Allowed top-level `cwd` defaults for parallel and chain sub-agent calls, with per-task or per-step `cwd` still taking precedence.
+- Clarified model-facing `subagent` argument guidance for single, parallel, and chain modes, including shared `cwd` behavior.
+
 ## v0.1.2
 
 ### Changed

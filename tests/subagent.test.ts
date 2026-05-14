@@ -290,6 +290,7 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 					default?: unknown;
 				};
 				cwd?: {
+					description?: unknown;
 					minLength?: unknown;
 				};
 			};
@@ -345,6 +346,10 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 		"Use security-auditor for security review.",
 		"Use docs-writer for documentation.",
 		"Use refactorer for behavior-preserving cleanup.",
+		"single {agent, task, cwd?}",
+		"parallel {tasks, cwd?}",
+		"chain {chain, cwd?}",
+		"Top-level cwd is a default for every subagent run in the call; per-task or per-step cwd overrides it.",
 	]) {
 		assert.match(guidelineText, new RegExp(escapeRegExp(expected)));
 	}
@@ -354,6 +359,7 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	assert.match(String(tool.parameters?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
 	assert.equal(tool.parameters?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.task?.minLength, 1);
+	assert.match(String(tool.parameters?.properties?.cwd?.description), /single, parallel, and chain/i);
 	assert.equal(tool.parameters?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.minItems, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.maxItems, 8);
@@ -409,13 +415,154 @@ test("subagent tool rejects partial or mixed mode arguments before spawning", as
 		{ agent: "worker" },
 		{ task: "do work" },
 		{ agent: "worker", task: "do work", tasks: [{ agent: "worker", task: "other work" }] },
-		{ tasks: [{ agent: "worker", task: "do work" }], cwd: "packages/app" },
-		{ chain: [{ agent: "worker", task: "do work" }], cwd: "packages/app" },
+		{ agent: "worker", task: "do work", chain: [{ agent: "worker", task: "other work" }] },
 	]) {
 		const result = await tool.execute("tool-call-1", params, undefined, undefined, { cwd: process.cwd(), hasUI: false });
 		assert.match(result.content[0]?.text ?? "", /Invalid subagent arguments/i);
 		assert.deepEqual(result.details.results, []);
 	}
+});
+
+test("parallel subagent calls accept a top-level cwd default with per-task overrides", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ messages: Array<{ content: Array<{ type: "text"; text: string }> }> }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { tasks: Array<{ agent: string; task: string; cwd?: string }>; cwd?: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		const appDir = join(projectDir, "packages", "app");
+		const libDir = join(projectDir, "packages", "lib");
+		await mkdir(appDir, { recursive: true });
+		await mkdir(libDir, { recursive: true });
+
+		const fakePi = join(dir, "fake-pi-parallel-cwd.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: process.cwd() }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					tasks: [
+						{ agent: "worker", task: "print default cwd" },
+						{ agent: "worker", task: "print override cwd", cwd: "@packages/lib" },
+					],
+					cwd: "@packages/app",
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+
+			assert.match(result.content[0]?.text ?? "", /Parallel tasks: 2\/2 succeeded/);
+			assert.equal(result.details.results[0]?.messages[0]?.content[0]?.text, appDir);
+			assert.equal(result.details.results[1]?.messages[0]?.content[0]?.text, libDir);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("chain subagent calls accept a top-level cwd default with per-step overrides", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ messages: Array<{ content: Array<{ type: "text"; text: string }> }> }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { chain: Array<{ agent: string; task: string; cwd?: string }>; cwd?: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		const appDir = join(projectDir, "packages", "app");
+		const libDir = join(projectDir, "packages", "lib");
+		await mkdir(appDir, { recursive: true });
+		await mkdir(libDir, { recursive: true });
+
+		const fakePi = join(dir, "fake-pi-chain-cwd.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: process.cwd() }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					chain: [
+						{ agent: "worker", task: "print default cwd" },
+						{ agent: "worker", task: "print override cwd", cwd: "@packages/lib" },
+					],
+					cwd: "@packages/app",
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: projectDir, hasUI: false },
+			);
+
+			assert.equal(result.content[0]?.text, libDir);
+			assert.equal(result.details.results[0]?.messages[0]?.content[0]?.text, appDir);
+			assert.equal(result.details.results[1]?.messages[0]?.content[0]?.text, libDir);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
 });
 
 test("subagent path rendering only abbreviates real home-directory paths", () => {

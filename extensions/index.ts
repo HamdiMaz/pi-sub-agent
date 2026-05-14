@@ -41,6 +41,19 @@ const MAX_CHAIN_STEPS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 const SUBAGENT_TOOL_NAME = "subagent";
+const BUNDLED_AGENT_NAMES = "scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer";
+const BUNDLED_AGENT_SELECTION_GUIDANCE = [
+	"Use scout for codebase recon.",
+	"Use planner for implementation plans.",
+	"Use worker for general implementation.",
+	"Use reviewer for code quality review.",
+	"Use debugger for root-cause investigation.",
+	"Use verifier for running checks.",
+	"Use security-auditor for security review.",
+	"Use docs-writer for documentation.",
+	"Use refactorer for behavior-preserving cleanup.",
+] as const;
+const AGENT_NAME_DESCRIPTION = `Name of the agent to invoke. Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names for bundled agents; do not invent names such as default, general-purpose, security, or general.`;
 const SUBAGENT_DEPTH_ENV = "PI_SUB_AGENT_DEPTH";
 const MAX_SUBAGENT_DEPTH = 1;
 
@@ -737,13 +750,13 @@ async function runSingleAgent(
 }
 
 const TaskItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke", minLength: 1 }),
+	agent: Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 }),
 	task: Type.String({ description: "Task to delegate", minLength: 1 }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override for this task", minLength: 1 })),
 });
 
 const ChainItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke", minLength: 1 }),
+	agent: Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 }),
 	task: Type.String({
 		description: "Task with optional {previous} placeholder",
 		minLength: 1,
@@ -757,7 +770,7 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 });
 
 const SubagentParams = Type.Object({
-	agent: Type.Optional(Type.String({ description: "Single mode agent name", minLength: 1 })),
+	agent: Type.Optional(Type.String({ description: `Single mode agent name. ${AGENT_NAME_DESCRIPTION}`, minLength: 1 })),
 	task: Type.Optional(Type.String({ description: "Single mode task text", minLength: 1 })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list", minItems: 1, maxItems: MAX_PARALLEL_TASKS })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1, maxItems: MAX_CHAIN_STEPS })),
@@ -949,12 +962,15 @@ export default function (pi: ExtensionAPI): void {
 			`Supports single, parallel, and chain flows; parallel mode is capped at ${MAX_PARALLEL_TASKS} tasks and chain mode at ${MAX_CHAIN_STEPS} steps.`,
 			`LLM-facing output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
 			"Nested subagent calls are disabled to avoid runaway recursive delegation.",
-			'Bundled default agents are always available; user agents are used by default from ~/.pi/agent/agents.',
+			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
+			'User agents are used by default from ~/.pi/agent/agents.',
 			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
 		].join(" "),
 		promptSnippet: "Delegate work to specialized subagents in isolated Pi processes; supports single, parallel, and chain modes.",
 		promptGuidelines: [
 			"Use subagent when a task benefits from isolated context, parallel research, or specialized bundled/user/project agents.",
+			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
+			...BUNDLED_AGENT_SELECTION_GUIDANCE,
 			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,
 			'Use subagent with agentScope "project" or "both" only for trusted repositories because project agents are repo-controlled prompts.',
 			"Use subagent chain tasks with {previous} only when each step should consume the previous agent output.",

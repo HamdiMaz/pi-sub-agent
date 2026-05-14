@@ -253,6 +253,7 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 		parameters?: {
 			properties?: {
 				agent?: {
+					description?: unknown;
 					minLength?: unknown;
 				};
 				task?: {
@@ -263,7 +264,7 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 					maxItems?: unknown;
 					items?: {
 						properties?: {
-							agent?: { minLength?: unknown };
+							agent?: { description?: unknown; minLength?: unknown };
 							task?: { minLength?: unknown };
 							cwd?: { minLength?: unknown };
 						};
@@ -274,7 +275,7 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 					maxItems?: unknown;
 					items?: {
 						properties?: {
-							agent?: { minLength?: unknown };
+							agent?: { description?: unknown; minLength?: unknown };
 							task?: { minLength?: unknown };
 							cwd?: { minLength?: unknown };
 						};
@@ -323,25 +324,46 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	assert.ok(tool);
 	assert.equal(tool.name, "subagent");
 	assert.match(String(tool.description), /truncated/i);
+	const bundledAgents = "scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer";
+	assert.match(String(tool.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
+	assert.match(String(tool.description), /Use these exact names/i);
+	assert.match(String(tool.description), /Do not invent names/i);
 	const promptSnippet = tool.promptSnippet;
 	if (typeof promptSnippet !== "string") assert.fail("Expected promptSnippet to be a string");
 	assert.match(promptSnippet, /single, parallel, and chain/i);
 	const promptGuidelines = tool.promptGuidelines;
 	if (!Array.isArray(promptGuidelines)) assert.fail("Expected promptGuidelines to be an array");
 	assert.ok(promptGuidelines.some((guideline) => typeof guideline === "string" && guideline.includes("subagent")));
+	const guidelineText = promptGuidelines.join("\n");
+	for (const expected of [
+		"Use scout for codebase recon.",
+		"Use planner for implementation plans.",
+		"Use worker for general implementation.",
+		"Use reviewer for code quality review.",
+		"Use debugger for root-cause investigation.",
+		"Use verifier for running checks.",
+		"Use security-auditor for security review.",
+		"Use docs-writer for documentation.",
+		"Use refactorer for behavior-preserving cleanup.",
+	]) {
+		assert.match(guidelineText, new RegExp(escapeRegExp(expected)));
+	}
 	assert.equal(typeof tool.renderCall, "function");
 	assert.equal(typeof tool.renderResult, "function");
 
+	assert.match(String(tool.parameters?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
 	assert.equal(tool.parameters?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.minItems, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.maxItems, 8);
+	assert.match(String(tool.parameters?.properties?.tasks?.items?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.minItems, 1);
 	assert.equal(tool.parameters?.properties?.chain?.maxItems, 8);
+	assert.match(String(tool.parameters?.properties?.chain?.items?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.cwd?.minLength, 1);

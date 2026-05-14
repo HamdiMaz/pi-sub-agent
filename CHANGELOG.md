@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.1.2
+
+### Changed
+
+- Listed bundled sub-agent names directly in the model-facing `subagent` tool description and `agent` parameter descriptions so agents can select canonical names without guessing.
+- Added model-facing routing guidance for choosing bundled sub-agents by task type.
+
 ## v0.1.1
 
 ### Chores

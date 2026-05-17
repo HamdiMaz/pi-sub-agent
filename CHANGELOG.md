@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.1.4
+
+### Fixed
+
+- Limited the `/sub-agent-settings` model selector to models with configured auth, matching Pi's available-model behavior.
+
 ## v0.1.3
 
 ### Changed

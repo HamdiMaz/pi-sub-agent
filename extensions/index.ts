@@ -822,8 +822,14 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
+			ctx.modelRegistry.refresh();
+			const modelLoadError = ctx.modelRegistry.getError();
+			if (modelLoadError) {
+				ctx.ui.notify(modelLoadError, "warning");
+			}
+
 			const models = ctx.modelRegistry
-				.getAll()
+				.getAvailable()
 				.map((model) => ({
 					value: `${model.provider}/${model.id}`,
 					label: model.id,

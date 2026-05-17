@@ -3,7 +3,7 @@ import { access, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import setupExtension from "../extensions/index.ts";
 import {
 	discoverAgents,
@@ -688,6 +688,105 @@ test("settings command reports that interactive UI is required in non-interactiv
 	assert.deepEqual(notifications, [
 		{ message: "Sub-agent settings require an interactive UI.", level: "warning" },
 	]);
+});
+
+test("settings command lists only models with configured auth", async () => {
+	type Renderable = {
+		render: (width: number) => string[];
+		handleInput: (data: string) => void;
+		invalidate?: () => void;
+	};
+	type ModelRecord = { provider: string; id: string; reasoning?: boolean };
+	type CommandHandler = (
+		args: string,
+		ctx: {
+			cwd: string;
+			hasUI: true;
+			modelRegistry: {
+				refresh: () => void;
+				getError: () => string | undefined;
+				getAll: () => ModelRecord[];
+				getAvailable: () => ModelRecord[];
+			};
+			ui: {
+				notify: (message: string, level: "info" | "warning" | "error") => void;
+				custom: (
+					factory: (
+						tui: { requestRender: () => void },
+						theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string },
+						keybindings: unknown,
+						done: (value?: unknown) => void,
+					) => Renderable,
+				) => Promise<void>;
+			};
+		},
+	) => Promise<void>;
+
+	let handler: CommandHandler | undefined;
+	const pi = {
+		on() {},
+		registerTool() {},
+		registerCommand(name: string, options: { handler: CommandHandler }) {
+			if (name === "sub-agent-settings") handler = options.handler;
+		},
+	};
+	setupExtension(pi as unknown as ExtensionAPI);
+	assert.ok(handler);
+	const commandHandler = handler;
+
+	initTheme("dark", false);
+
+	await withTempDir(async (dir) => {
+		await withIsolatedPiAgentDir(dir, async () => {
+			let customComponent: Renderable | undefined;
+			let getAllCalls = 0;
+			let getAvailableCalls = 0;
+
+			await commandHandler("", {
+				cwd: dir,
+				hasUI: true,
+				modelRegistry: {
+					refresh() {},
+					getError() {
+						return undefined;
+					},
+					getAll() {
+						getAllCalls += 1;
+						return [
+							{ provider: "anthropic", id: "available-model", reasoning: true },
+							{ provider: "openai", id: "unavailable-model", reasoning: false },
+						];
+					},
+					getAvailable() {
+						getAvailableCalls += 1;
+						return [{ provider: "anthropic", id: "available-model", reasoning: true }];
+					},
+				},
+				ui: {
+					notify() {},
+					async custom(factory) {
+						customComponent = factory(
+							{ requestRender() {} },
+							{ fg: (_color, text) => text, bold: (text) => text },
+							{},
+							() => {},
+						);
+					},
+				},
+			});
+
+			assert.ok(customComponent);
+			customComponent.handleInput("\r");
+			customComponent.handleInput("\r");
+			const rendered = customComponent.render(120).join("\n");
+
+			assert.match(rendered, /inherit/);
+			assert.match(rendered, /available-model/);
+			assert.doesNotMatch(rendered, /unavailable-model/);
+			assert.equal(getAvailableCalls, 1);
+			assert.equal(getAllCalls, 0);
+		});
+	});
 });
 
 test("marks failed subagent tool results as Pi tool errors without dropping details", () => {

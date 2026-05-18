@@ -11,7 +11,7 @@ A Pi package extension that adds a `subagent` tool for delegating work to specia
 - Provides `/sub-agent-settings` to view and edit each sub-agent's model and thinking effort.
 - Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
 - Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
-- Truncates LLM-facing tool output to Pi's default tool limits (2,000 lines / 50KB), writes full truncated text to a private temp file, and preserves structured details for rendering.
+- Truncates each included LLM-facing subagent output to Pi's default tool limits (2,000 lines / 50KB), writes full truncated text to a private temp file, and preserves structured details for rendering.
 - Prevents recursive subagent fan-out by removing the `subagent` tool from child allowlists and blocking nested subagent invocations.
 - Requires confirmation before running project-local agents; non-interactive runs must explicitly set `confirmProjectAgents: false`.
 - Registers the `/sub-agent-settings` slash command, but does not bundle prompt templates.
@@ -167,7 +167,7 @@ Delegated task text is written to the child Pi process over stdin instead of bei
 
 ## Output limits
 
-The text returned to the main model is truncated from the tail at Pi's default tool-output limits: 2,000 lines or 50KB, whichever is hit first. When truncation occurs, the tool result includes a `Full output saved to:` temp-file path with `0600` permissions so the main agent can inspect the complete text if needed. Full subagent messages also remain in structured `details` so interactive rendering can show complete expanded output without flooding the model context.
+The text returned to the main model is truncated from the tail per included subagent output at Pi's default tool-output limits: 2,000 lines or 50KB, whichever is hit first. Parallel mode returns one bounded section per subagent rather than a shared 50KB budget, so every parallel task remains visible to the parent agent. When truncation occurs, the affected section includes a `Full output saved to:` temp-file path with `0600` permissions so the main agent can inspect the complete text if needed. Full subagent messages also remain in structured `details` so interactive rendering can show complete expanded output without flooding the model context.
 
 ## Error handling
 

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.1.5
+
+### Fixed
+
+- Expanded parallel subagent LLM-facing results from 120-character previews to one independently truncated output section per subagent, so parent agents can use parallel delegation without rerunning tasks serially.
+
 ## v0.1.4
 
 ### Fixed

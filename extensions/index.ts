@@ -463,6 +463,29 @@ function formatFailureOutput(result: SingleResult): string {
 	return `Subagent exited with code ${result.exitCode}.`;
 }
 
+function formatParallelToolContent(results: SingleResult[]): string {
+	const succeeded = results.filter((result) => !isTaskError(result)).length;
+	const sections = [`Parallel tasks: ${succeeded}/${results.length} succeeded`];
+
+	for (const [index, result] of results.entries()) {
+		const failed = isTaskError(result);
+		const icon = failed ? "✗" : "✓";
+		const usage = formatUsageStats(result.usage, result.model);
+		const body = failed ? formatFailureOutput(result) : collectFinalOutput(result.messages) || "(no output)";
+		const section = [
+			`## ${index + 1}. ${icon} ${result.agent}`,
+			`Task: ${result.task}`,
+			...(usage ? [`Usage: ${usage}`] : []),
+			"",
+			failed ? "Failure:" : "Output:",
+			truncateForToolContent(body),
+		];
+		sections.push(section.join("\n"));
+	}
+
+	return sections.join("\n\n");
+}
+
 function getFailureDiagnostic(result: SingleResult): { label: string; text: string } | undefined {
 	const errorMessage = result.errorMessage?.trim();
 	const stderr = result.stderr.trim();
@@ -966,7 +989,7 @@ export default function (pi: ExtensionAPI): void {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			`Supports single, parallel, and chain flows; parallel mode is capped at ${MAX_PARALLEL_TASKS} tasks and chain mode at ${MAX_CHAIN_STEPS} steps.`,
-			`LLM-facing output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
+			`LLM-facing output is truncated per included subagent output to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
 			"Nested subagent calls are disabled to avoid runaway recursive delegation.",
 			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
 			'User agents are used by default from ~/.pi/agent/agents.',
@@ -1199,23 +1222,11 @@ export default function (pi: ExtensionAPI): void {
 					return result;
 				});
 
-				const succeeded = results.filter((result) => !isTaskError(result)).length;
-				const summary = results
-					.map((result, index) => {
-						const failed = isTaskError(result);
-						const icon = failed ? "✗" : "✓";
-						const output = makePlaceholder(
-							failed ? formatFailureOutput(result) : collectFinalOutput(result.messages) || "(no output)",
-						);
-						return `${index + 1}. ${icon} ${result.agent} - ${output}`;
-					})
-					.join("\n");
-
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Parallel tasks: ${succeeded}/${results.length} succeeded\n\n${summary}`,
+							text: formatParallelToolContent(results),
 						},
 					],
 					details: makeDetails("parallel")(results),

@@ -97,7 +97,7 @@ The tool streams partial progress with structured `details` for each subagent re
 
 Collapsed views use Pi's configured `app.tools.expand` keybinding hint (Ctrl+O by default) instead of hard-coding a shortcut.
 
-LLM-facing tool content is truncated from the tail at Pi's default limits (2,000 lines / 50KB) to protect the parent context. When truncation occurs, the result includes a `Full output saved to:` temp-file path with `0600` permissions so the main agent can inspect the complete text if needed. Full subagent messages remain in `details` for expanded rendering and follow-up analysis.
+LLM-facing tool content is truncated from the tail per included subagent output at Pi's default limits (2,000 lines / 50KB). Parallel mode returns one bounded section per subagent rather than a shared 50KB budget, so every parallel task remains visible to the parent agent. When truncation occurs, the affected section includes a `Full output saved to:` temp-file path with `0600` permissions so the main agent can inspect the complete text if needed. Full subagent messages remain in `details` for expanded rendering and follow-up analysis.
 
 ## Security notes
 

@@ -1001,6 +1001,151 @@ test("parallel subagent updates are immutable snapshots", async () => {
 	});
 });
 
+test("parallel final content includes each task output beyond short previews", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { tasks: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-parallel-full-content.mjs");
+		await writeFile(
+			fakePi,
+			`let stdin = "";\n` +
+				`for await (const chunk of process.stdin) stdin += chunk;\n` +
+				`const label = stdin.includes("alpha") ? "alpha" : "beta";\n` +
+				`const output = label + "-start " + label[0].repeat(160) + " " + label + "-tail";\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					tasks: [
+						{ agent: "worker", task: "alpha task" },
+						{ agent: "worker", task: "beta task" },
+					],
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			const text = result.content[0]?.text ?? "";
+			assert.match(text, /Parallel tasks: 2\/2 succeeded/);
+			assert.match(text, /alpha-tail/);
+			assert.match(text, /beta-tail/);
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
+test("parallel final content truncates each task independently", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { tasks: Array<{ agent: string; task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-parallel-independent-truncation.mjs");
+		await writeFile(
+			fakePi,
+			`let stdin = "";\n` +
+				`for await (const chunk of process.stdin) stdin += chunk;\n` +
+				`const label = stdin.includes("alpha") ? "alpha" : "beta";\n` +
+				`const lines = Array.from({ length: 2600 }, (_, index) => label + "-line-" + index + " " + "x".repeat(40));\n` +
+				`const output = label + "-head\\n" + lines.join("\\n") + "\\n" + label + "-tail";\n` +
+				`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const originalArgv = process.argv[1];
+		process.argv[1] = fakePi;
+		try {
+			const result = await tool.execute(
+				"tool-call-1",
+				{
+					tasks: [
+						{ agent: "worker", task: "alpha task" },
+						{ agent: "worker", task: "beta task" },
+					],
+					agentScope: "user",
+				},
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			const text = result.content[0]?.text ?? "";
+			assert.match(text, /alpha-tail/);
+			assert.match(text, /beta-tail/);
+			assert.match(text, /Subagent output truncated/i);
+			const savedPaths = [...text.matchAll(/Full output saved to: (\S+)/g)].map((match) => match[1]).filter((path): path is string => Boolean(path));
+			assert.equal(savedPaths.length, 2);
+			try {
+				for (const savedPath of savedPaths) {
+					const saved = await readFile(savedPath, "utf8");
+					assert.match(saved, /(?:alpha|beta)-head/);
+				}
+			} finally {
+				for (const savedPath of savedPaths) {
+					await rm(dirname(savedPath), { recursive: true, force: true });
+				}
+			}
+		} finally {
+			if (originalArgv === undefined) {
+				process.argv.splice(1, 1);
+			} else {
+				process.argv[1] = originalArgv;
+			}
+		}
+	});
+});
+
 test("aborted subagents escalate to SIGKILL when SIGTERM is ignored", async () => {
 	await withTempDir(async (dir) => {
 		type ToolResult = { details: { results: Array<{ exitCode: number; stopReason?: string }> } };

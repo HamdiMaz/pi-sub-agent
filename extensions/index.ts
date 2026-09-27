@@ -23,7 +23,16 @@ import {
 	truncateTail,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, SelectList, Spacer, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import {
+	Container,
+	Markdown,
+	SelectList,
+	Spacer,
+	type SettingItem,
+	SettingsList,
+	Text,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	type AgentConfig,
@@ -960,7 +969,10 @@ export default function (pi: ExtensionAPI): void {
 					render(width: number) {
 						return [
 							theme.fg("accent", theme.bold("Sub-agent Settings")),
-							theme.fg("dim", "Configure models and thinking effort. Bundled agents save as user overrides."),
+							theme.fg(
+								"dim",
+								truncateToWidth("Configure models and thinking effort. Bundled agents save as user overrides.", width),
+							),
 							"",
 							...settingsList.render(width),
 						];

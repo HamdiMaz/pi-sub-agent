@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.2.0
+
 ### Breaking
 
 - Replaced the nine bundled specialist agents (scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer) with one general-purpose `subagent` agent. The parent writes the role into the task text. Set the model and thinking effort once with `/sub-agent-settings`.

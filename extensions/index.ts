@@ -41,19 +41,16 @@ const MAX_CHAIN_STEPS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 const SUBAGENT_TOOL_NAME = "subagent";
-const BUNDLED_AGENT_NAMES = "scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer";
-const BUNDLED_AGENT_SELECTION_GUIDANCE = [
-	"Use scout for codebase recon.",
-	"Use planner for implementation plans.",
-	"Use worker for general implementation.",
-	"Use reviewer for code quality review.",
-	"Use debugger for root-cause investigation.",
-	"Use verifier for running checks.",
-	"Use security-auditor for security review.",
-	"Use docs-writer for documentation.",
-	"Use refactorer for behavior-preserving cleanup.",
-] as const;
-const AGENT_NAME_DESCRIPTION = `Name of the agent to invoke. Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names for bundled agents; do not invent names such as default, general-purpose, security, or general.`;
+const DEFAULT_AGENT_NAME = "subagent";
+const AGENT_NAME_DESCRIPTION = `Optional agent name. Omit it to use the default "${DEFAULT_AGENT_NAME}" agent. User agents load from ~/.pi/agent/agents and project agents from .pi/agents.`;
+// Tools that only read state. A subagent may use these even when the parent
+// session has them disabled, because they cannot change the repository.
+const SAFE_CHILD_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const READ_ONLY_CHILD_TOOLS = ["read", "grep", "find", "ls"];
+// A run that passes this many assistant turns usually costs more than the task
+// is worth. Stop it and let the parent split the work.
+const MAX_SUBAGENT_TURNS = 60;
+const TURN_LIMIT_STOP_REASON = "turn_limit";
 const SUBAGENT_DEPTH_ENV = "PI_SUB_AGENT_DEPTH";
 const MAX_SUBAGENT_DEPTH = 1;
 
@@ -355,7 +352,26 @@ function resolveChildToolAllowlist(
 	if (parentTools === undefined) return requestedTools;
 	if (requestedTools === undefined) return parentTools;
 	const parentToolSet = new Set(parentTools);
-	return requestedTools.filter((tool) => parentToolSet.has(tool));
+	return requestedTools.filter((tool) => parentToolSet.has(tool) || SAFE_CHILD_TOOLS.has(tool));
+}
+
+function resolveAgentName(agentName: string | undefined): string {
+	const trimmed = agentName?.trim();
+	return trimmed ? trimmed : DEFAULT_AGENT_NAME;
+}
+
+function suggestAgentName(agentName: string, agents: AgentConfig[]): string | undefined {
+	const target = agentName.trim().toLowerCase();
+	if (target.length < 3) return undefined;
+	const candidates = agents
+		.map((agent) => agent.name)
+		.filter((name) => {
+			const candidate = name.toLowerCase();
+			return candidate === target || candidate.startsWith(target) || target.startsWith(candidate)
+				|| candidate.includes(target) || target.includes(candidate);
+		})
+		.sort((a, b) => a.length - b.length);
+	return candidates[0];
 }
 
 function writeFullOutputTempFile(text: string): string {
@@ -416,7 +432,8 @@ function isTaskError(result: SingleResult): boolean {
 		result.exitCode !== 0 ||
 		result.stopReason === "error" ||
 		result.stopReason === "aborted" ||
-		result.stopReason === "length"
+		result.stopReason === "length" ||
+		result.stopReason === TURN_LIMIT_STOP_REASON
 	);
 }
 
@@ -424,7 +441,8 @@ function isFailedResultLike(value: unknown): boolean {
 	if (!isRecord(value)) return false;
 	const exitCode = typeof value.exitCode === "number" ? value.exitCode : 0;
 	const stopReason = typeof value.stopReason === "string" ? value.stopReason : undefined;
-	return exitCode !== 0 || stopReason === "error" || stopReason === "aborted" || stopReason === "length";
+	return exitCode !== 0 || stopReason === "error" || stopReason === "aborted" || stopReason === "length"
+		|| stopReason === TURN_LIMIT_STOP_REASON;
 }
 
 function hasFailedSubagentResult(details: unknown): boolean {
@@ -524,32 +542,56 @@ function snapshotResult(result: SingleResult): SingleResult {
 	};
 }
 
-async function runSingleAgent(
-	defaultCwd: string,
-	agents: AgentConfig[],
-	agentName: string,
-	task: string,
-	cwd: string | undefined,
-	fallbackModel: string | undefined,
-	parentActiveTools: readonly string[] | undefined,
-	childSubagentDepth: number,
-	step: number | undefined,
-	signal: AbortSignal | undefined,
-	onUpdate: OnUpdateCallback | undefined,
-	makeDetails: (results: SingleResult[]) => SubagentDetails,
-): Promise<SingleResult> {
+interface RunSingleAgentOptions {
+	defaultCwd: string;
+	agents: AgentConfig[];
+	agentName: string;
+	task: string;
+	cwd: string | undefined;
+	fallbackModel: string | undefined;
+	parentActiveTools: readonly string[] | undefined;
+	childSubagentDepth: number;
+	step: number | undefined;
+	signal: AbortSignal | undefined;
+	onUpdate: OnUpdateCallback | undefined;
+	makeDetails: (results: SingleResult[]) => SubagentDetails;
+	readOnly: boolean;
+	projectContext: boolean;
+	skills: boolean;
+}
+
+async function runSingleAgent(options: RunSingleAgentOptions): Promise<SingleResult> {
+	const {
+		defaultCwd,
+		agents,
+		agentName,
+		task,
+		cwd,
+		fallbackModel,
+		parentActiveTools,
+		childSubagentDepth,
+		step,
+		signal,
+		onUpdate,
+		makeDetails,
+		readOnly,
+		projectContext,
+		skills,
+	} = options;
 	const agent = agents.find((candidate) => candidate.name === agentName);
 	const emptyUsage: UsageStats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
 
 	if (!agent) {
 		const known = agents.map((entry) => entry.name).sort().join(", ") || "none";
+		const suggestion = suggestAgentName(agentName, agents);
+		const hint = suggestion ? ` Did you mean "${suggestion}"?` : "";
 		const result: SingleResult = {
 			agent: agentName,
 			agentSource: "unknown",
 			task,
 			exitCode: 1,
 			messages: [],
-			stderr: `Unknown agent: "${agentName}". Available: ${known}`,
+			stderr: `Unknown agent: "${agentName}".${hint} Available: ${known}. Omit the agent field to use "${DEFAULT_AGENT_NAME}".`,
 			usage: { ...emptyUsage },
 		};
 		if (step !== undefined) {
@@ -559,12 +601,18 @@ async function runSingleAgent(
 	}
 
 	const args = ["--mode", "json", "-p", "--no-session"];
+	if (!projectContext) {
+		args.push("--no-context-files");
+	}
+	if (!skills) {
+		args.push("--no-skills");
+	}
 	const stdinPrompt = `Task: ${task}`;
 	const selectedModel = resolveAgentModel(agent, fallbackModel);
 	if (selectedModel) {
 		args.push("--model", selectedModel);
 	}
-	const childTools = resolveChildToolAllowlist(agent.tools, parentActiveTools);
+	const childTools = readOnly ? READ_ONLY_CHILD_TOOLS : resolveChildToolAllowlist(agent.tools, parentActiveTools);
 	if (childTools !== undefined) {
 		if (childTools.length > 0) {
 			args.push("--tools", childTools.join(","));
@@ -576,6 +624,7 @@ async function runSingleAgent(
 	let tmpDir: string | null = null;
 	let tmpPromptPath: string | null = null;
 	let aborted = false;
+	let turnLimitReached = false;
 	let abortListener: (() => void) | null = null;
 	const result: SingleResult = {
 		agent: agent.name,
@@ -635,6 +684,7 @@ async function runSingleAgent(
 			let closed = false;
 			let killTimer: ReturnType<typeof setTimeout> | undefined;
 			const parseLine = (line: string): void => {
+				if (turnLimitReached) return;
 				const trimmed = line.trim();
 				if (!trimmed) return;
 				let event: unknown;
@@ -662,6 +712,10 @@ async function runSingleAgent(
 					}
 					if (typeof message.errorMessage === "string" && message.errorMessage) {
 						result.errorMessage = message.errorMessage;
+					}
+					if (result.usage.turns >= MAX_SUBAGENT_TURNS) {
+						turnLimitReached = true;
+						abort();
 					}
 				}
 				emitUpdate();
@@ -731,7 +785,11 @@ async function runSingleAgent(
 			result.exitCode = 1;
 			result.errorMessage = "Subagent produced non-JSON stdout without any JSON messages.";
 		}
-		if (aborted) {
+		if (turnLimitReached) {
+			result.exitCode = 1;
+			result.stopReason = TURN_LIMIT_STOP_REASON;
+			result.errorMessage = `Subagent stopped after ${MAX_SUBAGENT_TURNS} turns. Split the task into smaller tasks.`;
+		} else if (aborted) {
 			result.exitCode = 1;
 			result.stopReason = "aborted";
 			if (!result.errorMessage) {
@@ -773,13 +831,13 @@ async function runSingleAgent(
 }
 
 const TaskItem = Type.Object({
-	agent: Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 }),
+	agent: Type.Optional(Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 })),
 	task: Type.String({ description: "Task to delegate", minLength: 1 }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override for this task", minLength: 1 })),
 });
 
 const ChainItem = Type.Object({
-	agent: Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 }),
+	agent: Type.Optional(Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 })),
 	task: Type.String({
 		description: "Task with optional {previous} placeholder",
 		minLength: 1,
@@ -793,12 +851,15 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 });
 
 const SubagentParams = Type.Object({
-	agent: Type.Optional(Type.String({ description: `Single mode agent name. ${AGENT_NAME_DESCRIPTION}`, minLength: 1 })),
-	task: Type.Optional(Type.String({ description: "Single mode task text", minLength: 1 })),
+	agent: Type.Optional(Type.String({ description: AGENT_NAME_DESCRIPTION, minLength: 1 })),
+	task: Type.Optional(Type.String({ description: "Single mode task text. Omit agent to use the default subagent.", minLength: 1 })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Parallel mode task list", minItems: 1, maxItems: MAX_PARALLEL_TASKS })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Chain mode task list", minItems: 1, maxItems: MAX_CHAIN_STEPS })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Confirm before running project agents", default: true })),
+	readOnly: Type.Optional(Type.Boolean({ description: "Restrict the subagent to read, grep, find, and ls. Use for review, audit, and investigation tasks.", default: false })),
+	projectContext: Type.Optional(Type.Boolean({ description: "Load project AGENTS.md and CLAUDE.md files into the subagent. Default false keeps the prompt small. Put the rules the task needs in the task text, or set this to true.", default: false })),
+	skills: Type.Optional(Type.Boolean({ description: "Load discovered and configured skills into the subagent. Default false keeps the prompt small and cheap. Set true only when the task must follow a named skill.", default: false })),
 	cwd: Type.Optional(Type.String({ description: "Default working directory for single, parallel, and chain modes. Per-task or per-step cwd overrides this default.", minLength: 1 })),
 });
 
@@ -987,21 +1048,27 @@ export default function (pi: ExtensionAPI): void {
 		name: "subagent",
 		label: "Subagent",
 		description: [
-			"Delegate tasks to specialized subagents with isolated context.",
+			"Delegate a task to a subagent with an isolated context window.",
+			`One general-purpose agent is bundled: "${DEFAULT_AGENT_NAME}". It is the default when agent is omitted. Write the role into the task text (for example "review only", "implement", or "investigate").`,
 			`Supports single, parallel, and chain flows; parallel mode is capped at ${MAX_PARALLEL_TASKS} tasks and chain mode at ${MAX_CHAIN_STEPS} steps.`,
 			`LLM-facing output is truncated per included subagent output to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full structured details remain available for rendering.`,
 			"Nested subagent calls are disabled to avoid runaway recursive delegation.",
-			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
-			'User agents are used by default from ~/.pi/agent/agents.',
-			'Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.',
+			`User agents are used by default from ~/.pi/agent/agents. Use agentScope "project" or "both" to include trusted project-local agents from .pi/agents.`,
 		].join(" "),
-		promptSnippet: "Delegate work to specialized subagents in isolated Pi processes; supports single, parallel, and chain modes.",
+		promptSnippet: "Delegate work to a subagent in an isolated Pi process; supports single, parallel, and chain modes.",
 		promptGuidelines: [
-			"Use subagent when a task benefits from isolated context, parallel research, or specialized bundled/user/project agents.",
-			`Bundled agents: ${BUNDLED_AGENT_NAMES}. Use these exact names; do not invent names such as default, general-purpose, security, or general.`,
-			...BUNDLED_AGENT_SELECTION_GUIDANCE,
+			"Use subagent when a task benefits from an isolated context, parallel work, or a fresh review.",
+			`Omit agent to use the default "${DEFAULT_AGENT_NAME}" agent. Name an agent only for a user agent in ~/.pi/agent/agents or a trusted project agent.`,
+			"Write the role into the task text: the goal, the scope, the constraints, the file paths, and the output format. Say 'review only, do not modify files' when the task must not change code.",
+			"Keep the task text short. Put a long brief in a file and pass the path. Very long inline tasks cost more tokens and can break tool-call JSON.",
+			"Tell the subagent to batch independent tool calls in one turn and to combine related shell commands into one bash call.",
+			"Set readOnly: true for review, audit, and investigation tasks. The subagent then gets only read, grep, find, and ls, and cannot change files.",
+			`Subagent runs skip project AGENTS.md and CLAUDE.md files by default to keep the prompt small. Put the rules that the task needs into the task text, or set projectContext: true when the task depends on project-wide instructions.`,
+			"Subagent runs also skip skills by default. Set skills: true only when the task must follow a named skill.",
+			`Each subagent run stops after ${MAX_SUBAGENT_TURNS} turns. Split a larger job into smaller tasks instead of raising one long run.`,
+			"Prefer one well-scoped subagent call over many small calls. Each call pays its own prompt and start-up cost.",
 			`Keep subagent parallel task lists to ${MAX_PARALLEL_TASKS} tasks or fewer and chain step lists to ${MAX_CHAIN_STEPS} steps or fewer.`,
-			"Use exactly one argument mode: single {agent, task, cwd?}, parallel {tasks, cwd?}, or chain {chain, cwd?}. Top-level cwd is a default for every subagent run in the call; per-task or per-step cwd overrides it.",
+			"Use exactly one argument mode: single {task, agent?, cwd?}, parallel {tasks, cwd?}, or chain {chain, cwd?}. Top-level cwd is a default for every subagent run in the call; per-task or per-step cwd overrides it.",
 			'Use subagent with agentScope "project" or "both" only for trusted repositories because project agents are repo-controlled prompts.',
 			"Use subagent chain tasks with {previous} only when each step should consume the previous agent output.",
 			"Do not ask subagent-launched agents to call subagent again; recursive delegation is blocked.",
@@ -1009,6 +1076,9 @@ export default function (pi: ExtensionAPI): void {
 		parameters: SubagentParams,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+			const readOnly = params.readOnly === true;
+			const projectContext = params.projectContext === true;
+			const skills = params.skills === true;
 			const parentActiveTools = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : undefined;
 			const parentThinkingLevel = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : "off";
 			const parentThinkingSuffix = parentThinkingLevel && parentThinkingLevel !== "off" ? `:${parentThinkingLevel}` : "";
@@ -1023,16 +1093,16 @@ export default function (pi: ExtensionAPI): void {
 				...(error ? { error } : {}),
 			});
 
-			const hasAgent = params.agent !== undefined;
-			const hasTask = params.task !== undefined;
-			const hasSingle = hasAgent && hasTask;
-			const hasPartialSingle = hasAgent !== hasTask;
+			const hasAgent = typeof params.agent === "string" && params.agent.trim().length > 0;
+			const hasTask = typeof params.task === "string" && params.task.trim().length > 0;
+			const hasSingle = hasTask;
+			const hasPartialSingle = hasAgent && !hasTask;
 			const hasParallel = (params.tasks?.length ?? 0) > 0;
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const modeCount = Number(hasSingle) + Number(hasParallel) + Number(hasChain);
 
 			if (modeCount !== 1 || hasPartialSingle) {
-				const error = "Invalid subagent arguments. Use exactly one of: {agent,task,cwd?}, {tasks,cwd?}, or {chain,cwd?}.";
+				const error = "Invalid subagent arguments. Use exactly one of: {task,agent?,cwd?}, {tasks,cwd?}, or {chain,cwd?}.";
 				return {
 					content: [
 						{
@@ -1062,9 +1132,9 @@ export default function (pi: ExtensionAPI): void {
 
 			if ((agentScope === "project" || agentScope === "both") && params.confirmProjectAgents !== false) {
 				const names = new Set<string>();
-				if (params.agent) names.add(params.agent);
-				for (const task of params.tasks ?? []) names.add(task.agent);
-				for (const step of params.chain ?? []) names.add(step.agent);
+				if (hasSingle) names.add(resolveAgentName(params.agent));
+				for (const task of params.tasks ?? []) names.add(resolveAgentName(task.agent));
+				for (const step of params.chain ?? []) names.add(resolveAgentName(step.agent));
 				const projectAgents = Array.from(names)
 					.map((name) => agents.find((agent) => agent.name === name))
 					.filter((agent): agent is AgentConfig => agent !== undefined && agent.source === "project");
@@ -1118,18 +1188,18 @@ export default function (pi: ExtensionAPI): void {
 					const step = params.chain[i];
 					if (!step) continue;
 					const task = step.task.replace(/\{previous\}/g, previous);
-					const result = await runSingleAgent(
-						ctx.cwd,
+					const result = await runSingleAgent({
+						defaultCwd: ctx.cwd,
 						agents,
-						step.agent,
+						agentName: resolveAgentName(step.agent),
 						task,
-						step.cwd ?? params.cwd,
-						parentModel,
+						cwd: step.cwd ?? params.cwd,
+						fallbackModel: parentModel,
 						parentActiveTools,
 						childSubagentDepth,
-						i + 1,
+						step: i + 1,
 						signal,
-						onUpdate
+						onUpdate: onUpdate
 							? (partial) => {
 								const current = partial.details.results[0];
 								if (!current) return;
@@ -1144,8 +1214,11 @@ export default function (pi: ExtensionAPI): void {
 								});
 							}
 							: undefined,
-						makeDetails("chain"),
-					);
+						makeDetails: makeDetails("chain"),
+						readOnly,
+						projectContext,
+						skills,
+					});
 					results.push(result);
 					if (isTaskError(result)) {
 						return {
@@ -1184,7 +1257,7 @@ export default function (pi: ExtensionAPI): void {
 				}
 
 				const live: SingleResult[] = params.tasks.map((task) => ({
-					agent: task.agent,
+					agent: resolveAgentName(task.agent),
 					agentSource: "unknown",
 					task: task.task,
 					exitCode: -1,
@@ -1194,18 +1267,18 @@ export default function (pi: ExtensionAPI): void {
 				}));
 
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (task, index) => {
-					const result = await runSingleAgent(
-						ctx.cwd,
+					const result = await runSingleAgent({
+						defaultCwd: ctx.cwd,
 						agents,
-						task.agent,
-						task.task,
-						task.cwd ?? params.cwd,
-						parentModel,
+						agentName: resolveAgentName(task.agent),
+						task: task.task,
+						cwd: task.cwd ?? params.cwd,
+						fallbackModel: parentModel,
 						parentActiveTools,
 						childSubagentDepth,
-						undefined,
+						step: undefined,
 						signal,
-						onUpdate
+						onUpdate: onUpdate
 							? (partial) => {
 								const current = partial.details.results[0];
 								if (!current) return;
@@ -1216,8 +1289,11 @@ export default function (pi: ExtensionAPI): void {
 								});
 							}
 							: undefined,
-						makeDetails("parallel"),
-					);
+						makeDetails: makeDetails("parallel"),
+						readOnly,
+						projectContext,
+						skills,
+					});
 					live[index] = result;
 					return result;
 				});
@@ -1233,21 +1309,24 @@ export default function (pi: ExtensionAPI): void {
 				};
 			}
 
-			if (params.agent && params.task) {
-				const result = await runSingleAgent(
-					ctx.cwd,
+			if (hasTask && params.task) {
+				const result = await runSingleAgent({
+					defaultCwd: ctx.cwd,
 					agents,
-					params.agent,
-					params.task,
-					params.cwd,
-					parentModel,
+					agentName: resolveAgentName(params.agent),
+					task: params.task,
+					cwd: params.cwd,
+					fallbackModel: parentModel,
 					parentActiveTools,
 					childSubagentDepth,
-					undefined,
+					step: undefined,
 					signal,
 					onUpdate,
-					makeDetails("single"),
-				);
+					makeDetails: makeDetails("single"),
+					readOnly,
+					projectContext,
+					skills,
+				});
 				if (isTaskError(result)) {
 					return {
 						content: [
@@ -1289,7 +1368,7 @@ export default function (pi: ExtensionAPI): void {
 					if (!step) continue;
 					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
 					const preview = makePlaceholder(cleanTask);
-					text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
+					text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("accent", step.agent || DEFAULT_AGENT_NAME)}${theme.fg("dim", ` ${preview}`)}`;
 				}
 				if (args.chain.length > 3) {
 					text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
@@ -1304,7 +1383,7 @@ export default function (pi: ExtensionAPI): void {
 					theme.fg("muted", ` [${scope}]`);
 				for (const task of args.tasks.slice(0, 3)) {
 					const preview = makePlaceholder(task.task);
-					text += `\n  ${theme.fg("accent", task.agent)}${theme.fg("dim", ` ${preview}`)}`;
+					text += `\n  ${theme.fg("accent", task.agent || DEFAULT_AGENT_NAME)}${theme.fg("dim", ` ${preview}`)}`;
 				}
 				if (args.tasks.length > 3) {
 					text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
@@ -1312,7 +1391,7 @@ export default function (pi: ExtensionAPI): void {
 				return new Text(text, 0, 0);
 			}
 
-			const agentName = args.agent || "...";
+			const agentName = args.agent || DEFAULT_AGENT_NAME;
 			const preview = args.task ? makePlaceholder(args.task) : "...";
 			const text =
 				theme.fg("toolTitle", theme.bold("subagent ")) +

@@ -325,10 +325,9 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	assert.ok(tool);
 	assert.equal(tool.name, "subagent");
 	assert.match(String(tool.description), /truncated/i);
-	const bundledAgents = "scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer";
-	assert.match(String(tool.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
-	assert.match(String(tool.description), /Use these exact names/i);
-	assert.match(String(tool.description), /Do not invent names/i);
+	assert.match(String(tool.description), /One general-purpose agent is bundled: "subagent"/i);
+	assert.match(String(tool.description), /default when agent is omitted/i);
+	assert.match(String(tool.description), /Write the role into the task text/i);
 	const promptSnippet = tool.promptSnippet;
 	if (typeof promptSnippet !== "string") assert.fail("Expected promptSnippet to be a string");
 	assert.match(promptSnippet, /single, parallel, and chain/i);
@@ -337,16 +336,12 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	assert.ok(promptGuidelines.some((guideline) => typeof guideline === "string" && guideline.includes("subagent")));
 	const guidelineText = promptGuidelines.join("\n");
 	for (const expected of [
-		"Use scout for codebase recon.",
-		"Use planner for implementation plans.",
-		"Use worker for general implementation.",
-		"Use reviewer for code quality review.",
-		"Use debugger for root-cause investigation.",
-		"Use verifier for running checks.",
-		"Use security-auditor for security review.",
-		"Use docs-writer for documentation.",
-		"Use refactorer for behavior-preserving cleanup.",
-		"single {agent, task, cwd?}",
+		'Omit agent to use the default "subagent" agent.',
+		"Write the role into the task text",
+		"Keep the task text short",
+		"batch independent tool calls in one turn",
+		"Prefer one well-scoped subagent call over many small calls",
+		"single {task, agent?, cwd?}",
 		"parallel {tasks, cwd?}",
 		"chain {chain, cwd?}",
 		"Top-level cwd is a default for every subagent run in the call; per-task or per-step cwd overrides it.",
@@ -356,20 +351,20 @@ test("registers a Pi-conventional subagent tool and settings command without bun
 	assert.equal(typeof tool.renderCall, "function");
 	assert.equal(typeof tool.renderResult, "function");
 
-	assert.match(String(tool.parameters?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
+	assert.match(String(tool.parameters?.properties?.agent?.description), /Omit it to use the default "subagent" agent/i);
 	assert.equal(tool.parameters?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.task?.minLength, 1);
 	assert.match(String(tool.parameters?.properties?.cwd?.description), /single, parallel, and chain/i);
 	assert.equal(tool.parameters?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.minItems, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.maxItems, 8);
-	assert.match(String(tool.parameters?.properties?.tasks?.items?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
+	assert.match(String(tool.parameters?.properties?.tasks?.items?.properties?.agent?.description), /Omit it to use the default "subagent" agent/i);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.tasks?.items?.properties?.cwd?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.minItems, 1);
 	assert.equal(tool.parameters?.properties?.chain?.maxItems, 8);
-	assert.match(String(tool.parameters?.properties?.chain?.items?.properties?.agent?.description), new RegExp(escapeRegExp(`Bundled agents: ${bundledAgents}`)));
+	assert.match(String(tool.parameters?.properties?.chain?.items?.properties?.agent?.description), /Omit it to use the default "subagent" agent/i);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.agent?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.task?.minLength, 1);
 	assert.equal(tool.parameters?.properties?.chain?.items?.properties?.cwd?.minLength, 1);
@@ -412,10 +407,10 @@ test("subagent tool rejects partial or mixed mode arguments before spawning", as
 	assert.ok(tool);
 
 	for (const params of [
-		{ agent: "worker" },
-		{ task: "do work" },
-		{ agent: "worker", task: "do work", tasks: [{ agent: "worker", task: "other work" }] },
-		{ agent: "worker", task: "do work", chain: [{ agent: "worker", task: "other work" }] },
+		{},
+		{ agent: "subagent" },
+		{ agent: "subagent", task: "do work", tasks: [{ agent: "subagent", task: "other work" }] },
+		{ agent: "subagent", task: "do work", chain: [{ agent: "subagent", task: "other work" }] },
 	]) {
 		const result = await tool.execute("tool-call-1", params, undefined, undefined, { cwd: process.cwd(), hasUI: false });
 		assert.match(result.content[0]?.text ?? "", /Invalid subagent arguments/i);
@@ -470,8 +465,8 @@ test("parallel subagent calls accept a top-level cwd default with per-task overr
 				"tool-call-1",
 				{
 					tasks: [
-						{ agent: "worker", task: "print default cwd" },
-						{ agent: "worker", task: "print override cwd", cwd: "@packages/lib" },
+						{ agent: "subagent", task: "print default cwd" },
+						{ agent: "subagent", task: "print override cwd", cwd: "@packages/lib" },
 					],
 					cwd: "@packages/app",
 					agentScope: "user",
@@ -541,8 +536,8 @@ test("chain subagent calls accept a top-level cwd default with per-step override
 				"tool-call-1",
 				{
 					chain: [
-						{ agent: "worker", task: "print default cwd" },
-						{ agent: "worker", task: "print override cwd", cwd: "@packages/lib" },
+						{ agent: "subagent", task: "print default cwd" },
+						{ agent: "subagent", task: "print override cwd", cwd: "@packages/lib" },
 					],
 					cwd: "@packages/app",
 					agentScope: "user",
@@ -626,7 +621,7 @@ test("subagent path rendering only abbreviates real home-directory paths", () =>
 				projectAgentsDir: null,
 				results: [
 					{
-						agent: "worker",
+						agent: "subagent",
 						agentSource: "extension",
 						task: "read a path",
 						exitCode: 0,
@@ -923,7 +918,7 @@ test("subagent updates mark active subprocesses as running until they close", as
 			const updates: ToolUpdate[] = [];
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "say hi", agentScope: "user" },
+				{ agent: "subagent", task: "say hi", agentScope: "user" },
 				undefined,
 				(partial) => updates.push(partial),
 				{ cwd: dir, hasUI: false },
@@ -982,7 +977,7 @@ test("parallel subagent updates are immutable snapshots", async () => {
 			const updates: ToolUpdate[] = [];
 			const result = await tool.execute(
 				"tool-call-1",
-				{ tasks: [{ agent: "worker", task: "stream then finish" }], agentScope: "user" },
+				{ tasks: [{ agent: "subagent", task: "stream then finish" }], agentScope: "user" },
 				undefined,
 				(partial) => updates.push(partial),
 				{ cwd: dir, hasUI: false },
@@ -1043,8 +1038,8 @@ test("parallel final content includes each task output beyond short previews", a
 				"tool-call-1",
 				{
 					tasks: [
-						{ agent: "worker", task: "alpha task" },
-						{ agent: "worker", task: "beta task" },
+						{ agent: "subagent", task: "alpha task" },
+						{ agent: "subagent", task: "beta task" },
 					],
 					agentScope: "user",
 				},
@@ -1110,8 +1105,8 @@ test("parallel final content truncates each task independently", async () => {
 				"tool-call-1",
 				{
 					tasks: [
-						{ agent: "worker", task: "alpha task" },
-						{ agent: "worker", task: "beta task" },
+						{ agent: "subagent", task: "alpha task" },
+						{ agent: "subagent", task: "beta task" },
 					],
 					agentScope: "user",
 				},
@@ -1189,7 +1184,7 @@ test("aborted subagents escalate to SIGKILL when SIGTERM is ignored", async () =
 			const controller = new AbortController();
 			const runPromise = tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "wait until aborted", agentScope: "user" },
+				{ agent: "subagent", task: "wait until aborted", agentScope: "user" },
 				controller.signal,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -1273,7 +1268,7 @@ test("collapsed subagent renderers use Pi keybinding hints for expansion", () =>
 				projectAgentsDir: null,
 				results: [
 					{
-						agent: "worker",
+						agent: "subagent",
 						agentSource: "extension",
 						task: "done",
 						exitCode: 0,
@@ -1346,7 +1341,7 @@ test("parallel renderer marks model error stop reasons as failed tasks", () => {
 				projectAgentsDir: null,
 				results: [
 					{
-						agent: "worker",
+						agent: "subagent",
 						agentSource: "extension",
 						task: "fail through model stopReason",
 						exitCode: 0,
@@ -1363,7 +1358,7 @@ test("parallel renderer marks model error stop reasons as failed tasks", () => {
 	);
 
 	assert.match(rendered.text ?? "", /parallel 0\/1 tasks/);
-	assert.match(rendered.text ?? "", /worker ✗/);
+	assert.match(rendered.text ?? "", /subagent ✗/);
 });
 
 test("chain renderer marks model error stop reasons as failed steps", () => {
@@ -1421,7 +1416,7 @@ test("chain renderer marks model error stop reasons as failed steps", () => {
 				projectAgentsDir: null,
 				results: [
 					{
-						agent: "worker",
+						agent: "subagent",
 						agentSource: "extension",
 						task: "fail through model stopReason",
 						exitCode: 0,
@@ -1439,7 +1434,7 @@ test("chain renderer marks model error stop reasons as failed steps", () => {
 	);
 
 	assert.match(rendered.text ?? "", /chain 0\/1 steps/);
-	assert.match(rendered.text ?? "", /worker ✗/);
+	assert.match(rendered.text ?? "", /subagent ✗/);
 });
 
 test("subagent renderers surface stderr and stdout diagnostics for failed results without assistant output", () => {
@@ -1493,7 +1488,7 @@ test("subagent renderers surface stderr and stdout diagnostics for failed result
 
 	const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
 	const failed: Result = {
-		agent: "worker",
+		agent: "subagent",
 		agentSource: "extension",
 		task: "fail before producing output",
 		exitCode: 23,
@@ -1575,7 +1570,7 @@ test("chain mode rejects excessive steps before spawning subprocesses", async ()
 		assert.ok(tool);
 
 		const chain = Array.from({ length: 9 }, (_, index) => ({
-			agent: "worker",
+			agent: "subagent",
 			task: `step ${index + 1}`,
 		}));
 		const result = await tool.execute(
@@ -1630,7 +1625,7 @@ test("parallel mode treats model error stop reasons as failed tasks", async () =
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ tasks: [{ agent: "worker", task: "fail through model stopReason" }], agentScope: "user" },
+				{ tasks: [{ agent: "subagent", task: "fail through model stopReason" }], agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -1688,7 +1683,7 @@ test("uses the parent model for bundled agents that do not pin a model", async (
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "capture argv", agentScope: "user" },
+					{ agent: "subagent", task: "capture argv", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false, model: { provider: "openai", id: "gpt-5" } },
@@ -1813,12 +1808,17 @@ test("subagents inherit the parent active tool allowlist when agent tools are om
 		assert.ok(tool);
 
 		await withIsolatedPiAgentDir(dir, async () => {
+			await writeAgent(join(dir, "config", "agents"), "inherit-tools.md", {
+				name: "inherit-tools",
+				description: "Agent without a tools list",
+			}, "Inherit the parent tools");
+
 			const originalArgv = process.argv[1];
 			process.argv[1] = fakePi;
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "capture inherited tools", agentScope: "user" },
+					{ agent: "inherit-tools", task: "capture inherited tools", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -1828,6 +1828,230 @@ test("subagents inherit the parent active tool allowlist when agent tools are om
 				const toolsFlagIndex = argv.indexOf("--tools");
 				assert.notEqual(toolsFlagIndex, -1);
 				assert.equal(argv[toolsFlagIndex + 1], "read,grep");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("subagents skip project context files and skills by default and load them on request", async () => {
+	await withTempDir(async (dir) => {
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task: string; projectContext?: boolean; skills?: boolean; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
+		};
+
+		const fakePi = join(dir, "fake-pi-context-files.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const withoutContext = await tool.execute("call-1", { task: "plain task", agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				const plainArgv = JSON.parse(withoutContext.content[0]?.text ?? "[]") as string[];
+				assert.ok(plainArgv.includes("--no-context-files"), "project context should be off by default");
+				assert.ok(plainArgv.includes("--no-skills"), "skills should be off by default");
+
+				const withContext = await tool.execute("call-2", { task: "needs project rules", projectContext: true, agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				const contextArgv = JSON.parse(withContext.content[0]?.text ?? "[]") as string[];
+				assert.ok(!contextArgv.includes("--no-context-files"), "projectContext: true should load context files");
+				assert.ok(contextArgv.includes("--no-skills"), "skills stay off when only projectContext is set");
+
+				const withSkills = await tool.execute("call-3", { task: "needs a skill", skills: true, agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				const skillsArgv = JSON.parse(withSkills.content[0]?.text ?? "[]") as string[];
+				assert.ok(!skillsArgv.includes("--no-skills"), "skills: true should load skills");
+				assert.ok(skillsArgv.includes("--no-context-files"), "project context stays off when only skills is set");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("readOnly restricts the child to read-only tools", async () => {
+	await withTempDir(async (dir) => {
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task: string; readOnly?: boolean; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
+		};
+
+		const fakePi = join(dir, "fake-pi-read-only.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read", "bash", "edit", "write"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute("call-1", { task: "review only", readOnly: true, agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const toolsFlagIndex = argv.indexOf("--tools");
+				assert.notEqual(toolsFlagIndex, -1);
+				assert.equal(argv[toolsFlagIndex + 1], "read,grep,find,ls");
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("a subagent run stops after the turn limit and reports why", async () => {
+	await withTempDir(async (dir) => {
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<{ content: Array<{ type: "text"; text: string }>; details: { results: Array<{ stopReason?: string; exitCode: number; usage: { turns: number } }> } }>;
+		};
+
+		const fakePi = join(dir, "fake-pi-turn-limit.mjs");
+		await writeFile(
+			fakePi,
+			`const line = JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "working" }], stopReason: "end", usage: { input: 1, output: 1 } } });\n` +
+				`for (let i = 0; i < 70; i += 1) console.log(line);\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute("call-1", { task: "run forever", agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				assert.equal(result.details.results[0]?.stopReason, "turn_limit");
+				assert.equal(result.details.results[0]?.exitCode, 1);
+				assert.equal(result.details.results[0]?.usage.turns, 60);
+				assert.match(result.content[0]?.text ?? "", /stopped after 60 turns/i);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("the bundled subagent receives read-only search tools even when the parent disables them", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-safe-tools.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			getActiveTools() {
+				return ["read", "bash", "edit", "write"];
+			},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const result = await tool.execute(
+					"tool-call-1",
+					{ task: "capture default tools", agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+
+				const argv = JSON.parse(result.content[0]?.text ?? "[]") as string[];
+				const toolsFlagIndex = argv.indexOf("--tools");
+				assert.notEqual(toolsFlagIndex, -1);
+				assert.equal(argv[toolsFlagIndex + 1], "read,bash,edit,write,grep,find,ls");
 			} finally {
 				if (originalArgv === undefined) {
 					process.argv.splice(1, 1);
@@ -1882,7 +2106,7 @@ test("subagents do not inherit the subagent tool and receive depth tracking", as
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "capture inherited tools and depth", agentScope: "user" },
+					{ agent: "subagent", task: "capture inherited tools and depth", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -1891,7 +2115,7 @@ test("subagents do not inherit the subagent tool and receive depth tracking", as
 				const captured = JSON.parse(result.content[0]?.text ?? "{}") as { argv: string[]; depth?: string };
 				const toolsFlagIndex = captured.argv.indexOf("--tools");
 				assert.notEqual(toolsFlagIndex, -1);
-				assert.equal(captured.argv[toolsFlagIndex + 1], "read,bash");
+				assert.equal(captured.argv[toolsFlagIndex + 1], "read,bash,grep,find,ls");
 				assert.ok(!captured.argv.includes("subagent"), "subagent should not be inherited as an executable child tool");
 				assert.equal(captured.depth, "1");
 			} finally {
@@ -1951,7 +2175,7 @@ test("nested subagent executions are blocked before spawning another Pi process"
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "try to recurse", agentScope: "user" },
+				{ agent: "subagent", task: "try to recurse", agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -2082,7 +2306,7 @@ test("single-agent tasks are passed over stdin instead of exposing prompt text i
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: secretTask, agentScope: "user" },
+				{ agent: "subagent", task: secretTask, agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -2138,7 +2362,7 @@ test("single-agent malformed JSON stdout is treated as a failed subagent run", a
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "produce malformed output", agentScope: "user" },
+					{ agent: "subagent", task: "produce malformed output", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2197,7 +2421,7 @@ test("single-agent signal terminations are treated as failed subagent runs", asy
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "terminate by signal", agentScope: "user" },
+					{ agent: "subagent", task: "terminate by signal", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2257,7 +2481,7 @@ test("single-agent failures surface subprocess stderr in LLM-facing content", as
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail before output", agentScope: "user" },
+					{ agent: "subagent", task: "fail before output", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2311,7 +2535,7 @@ test("single-agent spawn errors surface actionable diagnostics", async () => {
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail before spawning", agentScope: "user" },
+					{ agent: "subagent", task: "fail before spawning", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2376,7 +2600,7 @@ test("single-agent failure diagnostics avoid duplicating model errors already pr
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail with duplicate diagnostics", agentScope: "user" },
+					{ agent: "subagent", task: "fail with duplicate diagnostics", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2436,7 +2660,7 @@ test("single-agent failures include assistant output and subprocess stderr", asy
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail after partial output", agentScope: "user" },
+					{ agent: "subagent", task: "fail after partial output", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2494,7 +2718,7 @@ test("single-agent failures include stop reasons alongside assistant output", as
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail by stopReason after partial output", agentScope: "user" },
+					{ agent: "subagent", task: "fail by stopReason after partial output", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2553,7 +2777,7 @@ test("single-agent stop reasons are not deduped against assistant output text", 
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail with overlapping output text", agentScope: "user" },
+					{ agent: "subagent", task: "fail with overlapping output text", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2610,7 +2834,7 @@ test("parallel failures include stop reason diagnostics when no output exists", 
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ tasks: [{ agent: "worker", task: "fail by stopReason" }], agentScope: "user" },
+					{ tasks: [{ agent: "subagent", task: "fail by stopReason" }], agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2668,7 +2892,7 @@ test("chain failures include stop reason diagnostics when no output exists", asy
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ chain: [{ agent: "worker", task: "fail by stopReason" }], agentScope: "user" },
+					{ chain: [{ agent: "subagent", task: "fail by stopReason" }], agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2726,7 +2950,7 @@ test("single-agent stopReason failures include the stop reason when no output ex
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "fail by stopReason", agentScope: "user" },
+					{ agent: "subagent", task: "fail by stopReason", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2783,7 +3007,7 @@ test("single-agent length stop reasons are treated as failed incomplete runs", a
 			try {
 				const result = await tool.execute(
 					"tool-call-1",
-					{ agent: "worker", task: "hit output limit", agentScope: "user" },
+					{ agent: "subagent", task: "hit output limit", agentScope: "user" },
 					undefined,
 					undefined,
 					{ cwd: dir, hasUI: false },
@@ -2839,7 +3063,51 @@ test("single-agent unknown agents surface available-agent guidance", async () =>
 
 			assert.equal(result.details.results[0]?.exitCode, 1);
 			assert.match(result.content[0]?.text ?? "", /Unknown agent: "missing-agent"/);
-			assert.match(result.content[0]?.text ?? "", /Available: .*worker/);
+			assert.match(result.content[0]?.text ?? "", /Available: subagent/);
+			assert.match(result.content[0]?.text ?? "", /Omit the agent field to use "subagent"/);
+		});
+	});
+});
+
+test("unknown agents suggest the closest available name", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { agent: string; task: string; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			await writeAgent(join(dir, "config", "agents"), "docs-writer.md", {
+				name: "docs-writer",
+				description: "Writes documentation",
+			}, "Write docs");
+
+			const tools: Array<{ execute?: unknown }> = [];
+			const pi = {
+				on() {},
+				registerTool(tool: { execute?: unknown }) {
+					tools.push(tool);
+				},
+			};
+			setupExtension(pi as unknown as ExtensionAPI);
+			const tool = tools[0] as ExecutableTool | undefined;
+			assert.ok(tool);
+
+			const result = await tool.execute(
+				"tool-call-1",
+				{ agent: "writer", task: "do work", agentScope: "user" },
+				undefined,
+				undefined,
+				{ cwd: dir, hasUI: false },
+			);
+
+			assert.match(result.content[0]?.text ?? "", /Did you mean "docs-writer"\?/);
 		});
 	});
 });
@@ -2957,7 +3225,7 @@ test("single-agent cwd overrides resolve relative to ctx.cwd and accept @ prefix
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "print cwd", cwd: "@packages/app", agentScope: "user" },
+				{ agent: "subagent", task: "print cwd", cwd: "@packages/app", agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: projectDir, hasUI: false },
@@ -3016,7 +3284,7 @@ test("single-agent invalid cwd overrides return actionable diagnostics before sp
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "print cwd", cwd: "@missing/app", agentScope: "user" },
+				{ agent: "subagent", task: "print cwd", cwd: "@missing/app", agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: projectDir, hasUI: false },
@@ -3073,7 +3341,7 @@ test("single-agent output preserves all assistant text parts in order", async ()
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "produce multipart output", agentScope: "user" },
+				{ agent: "subagent", task: "produce multipart output", agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -3132,9 +3400,9 @@ test("chain handoff uses an empty previous output instead of stale earlier outpu
 				"tool-call-1",
 				{
 					chain: [
-						{ agent: "worker", task: "first" },
-						{ agent: "worker", task: "empty after {previous}" },
-						{ agent: "worker", task: "third sees {previous}" },
+						{ agent: "subagent", task: "first" },
+						{ agent: "subagent", task: "empty after {previous}" },
+						{ agent: "subagent", task: "third sees {previous}" },
 					],
 					agentScope: "user",
 				},
@@ -3201,9 +3469,9 @@ test("chain handoff treats a final empty assistant text as the previous output",
 				"tool-call-1",
 				{
 					chain: [
-						{ agent: "worker", task: "first" },
-						{ agent: "worker", task: "empty-final after {previous}" },
-						{ agent: "worker", task: "third sees {previous}" },
+						{ agent: "subagent", task: "first" },
+						{ agent: "subagent", task: "empty-final after {previous}" },
+						{ agent: "subagent", task: "third sees {previous}" },
 					],
 					agentScope: "user",
 				},
@@ -3268,7 +3536,7 @@ test("single-agent results truncate LLM-facing content, save full output, and re
 		try {
 			const result = await tool.execute(
 				"tool-call-1",
-				{ agent: "worker", task: "produce long output", agentScope: "user" },
+				{ agent: "subagent", task: "produce long output", agentScope: "user" },
 				undefined,
 				undefined,
 				{ cwd: dir, hasUI: false },
@@ -3298,49 +3566,134 @@ test("single-agent results truncate LLM-facing content, save full output, and re
 	});
 });
 
-test("bundled agents include the documented specialist set with conservative tool access", async () => {
+test("bundles exactly one general-purpose agent that the parent can steer from the task text", async () => {
 	const agentDir = join("extensions", "agents");
 	const files = (await readdir(agentDir)).filter((file) => file.endsWith(".md")).sort();
-	assert.deepEqual(files, [
-		"debugger.md",
-		"docs-writer.md",
-		"planner.md",
-		"refactorer.md",
-		"reviewer.md",
-		"scout.md",
-		"security-auditor.md",
-		"verifier.md",
-		"worker.md",
-	]);
+	assert.deepEqual(files, ["subagent.md"]);
 
-	for (const file of files) {
-		const content = await readFile(join(agentDir, file), "utf8");
-		assert.doesNotMatch(content, /^model:/m, `${file} should not pin a provider-specific model`);
-	}
+	const content = await readFile(join(agentDir, "subagent.md"), "utf8");
+	assert.doesNotMatch(content, /^model:/m, "subagent.md should not pin a provider-specific model");
+	assert.doesNotMatch(content, /^thinking:/m, "subagent.md should inherit the parent thinking level so settings decide it");
+	assert.match(content, /defines your role, scope, constraints, and output format/i);
+	assert.match(content, /Send 2 to 4 independent tool calls in one turn/i);
+	assert.match(content, /Combine related shell commands into one `bash` call/i);
+	assert.match(content, /only commentary/i);
+	assert.match(content, /Do not call subagents/i);
 
 	const discovery = discoverAgents(process.cwd(), "project", agentDir);
-	const byName = new Map(discovery.agents.map((agent) => [agent.name, agent]));
-	assert.deepEqual([...byName.keys()].sort(), [
-		"debugger",
-		"docs-writer",
-		"planner",
-		"refactorer",
-		"reviewer",
-		"scout",
-		"security-auditor",
-		"verifier",
-		"worker",
-	]);
+	assert.deepEqual(discovery.agents.map((agent) => agent.name), ["subagent"]);
+	assert.deepEqual(discovery.agents[0]?.tools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
+});
 
-	for (const readOnlyName of ["scout", "planner", "reviewer", "security-auditor"] as const) {
-		assert.deepEqual(byName.get(readOnlyName)?.tools, ["read", "grep", "find", "ls"], `${readOnlyName} should stay read-only`);
-	}
-	for (const investigativeName of ["debugger", "verifier"] as const) {
-		assert.deepEqual(byName.get(investigativeName)?.tools, ["read", "grep", "find", "ls", "bash"], `${investigativeName} should be allowed to run diagnostic commands`);
-	}
-	assert.equal(byName.get("worker")?.tools, undefined, "worker should inherit parent tools for implementation tasks");
-	assert.equal(byName.get("docs-writer")?.tools, undefined, "docs-writer should inherit parent tools for documentation edits");
-	assert.equal(byName.get("refactorer")?.tools, undefined, "refactorer should inherit parent tools for refactoring edits");
+test("omitting the agent uses the bundled default agent in single, parallel, and chain modes", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = {
+			content: Array<{ type: "text"; text: string }>;
+			details: { results: Array<{ agent: string }> };
+		};
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task?: string; tasks?: Array<{ task: string }>; chain?: Array<{ task: string }>; agentScope?: "user" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const fakePi = join(dir, "fake-pi-default-agent.mjs");
+		await writeFile(
+			fakePi,
+			`console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(process.argv.slice(2)) }], stopReason: "end" } }));\n`,
+			"utf8",
+		);
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		await withIsolatedPiAgentDir(dir, async () => {
+			const originalArgv = process.argv[1];
+			process.argv[1] = fakePi;
+			try {
+				const single = await tool.execute("call-1", { task: "single task", agentScope: "user" }, undefined, undefined, { cwd: dir, hasUI: false });
+				assert.equal(single.details.results[0]?.agent, "subagent");
+
+				const parallel = await tool.execute(
+					"call-2",
+					{ tasks: [{ task: "first" }, { task: "second" }], agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+				assert.deepEqual(parallel.details.results.map((result) => result.agent), ["subagent", "subagent"]);
+
+				const chain = await tool.execute(
+					"call-3",
+					{ chain: [{ task: "first" }, { task: "second {previous}" }], agentScope: "user" },
+					undefined,
+					undefined,
+					{ cwd: dir, hasUI: false },
+				);
+				assert.deepEqual(chain.details.results.map((result) => result.agent), ["subagent", "subagent"]);
+			} finally {
+				if (originalArgv === undefined) {
+					process.argv.splice(1, 1);
+				} else {
+					process.argv[1] = originalArgv;
+				}
+			}
+		});
+	});
+});
+
+test("a project agent that overrides the default name still requires confirmation", async () => {
+	await withTempDir(async (dir) => {
+		type ToolResult = { content: Array<{ type: "text"; text: string }> };
+		type ExecutableTool = {
+			execute: (
+				toolCallId: string,
+				params: { task: string; agentScope?: "project" },
+				signal: AbortSignal | undefined,
+				onUpdate: undefined,
+				ctx: { cwd: string; hasUI: false },
+			) => Promise<ToolResult>;
+		};
+
+		const projectDir = join(dir, "project");
+		await writeAgent(join(projectDir, ".pi", "agents"), "subagent.md", {
+			name: "subagent",
+			description: "Repository-controlled default agent",
+		}, "Project prompt");
+
+		const tools: Array<{ execute?: unknown }> = [];
+		const pi = {
+			on() {},
+			registerTool(tool: { execute?: unknown }) {
+				tools.push(tool);
+			},
+		};
+		setupExtension(pi as unknown as ExtensionAPI);
+		const tool = tools[0] as ExecutableTool | undefined;
+		assert.ok(tool);
+
+		const result = await tool.execute(
+			"tool-call-1",
+			{ task: "use the default agent", agentScope: "project" },
+			undefined,
+			undefined,
+			{ cwd: projectDir, hasUI: false },
+		);
+
+		assert.match(result.content[0]?.text ?? "", /Canceled: running project-local agents requires confirmation/);
+	});
 });
 
 test("does not bundle workflow prompt templates that become slash commands", async () => {

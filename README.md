@@ -1,14 +1,19 @@
 # pi-sub-agent
 
-A Pi package extension that adds a `subagent` tool for delegating work to specialized Pi subprocesses with isolated context windows.
+A Pi package extension that adds a `subagent` tool for delegating work to a Pi subprocess with an isolated context window.
 
 ## Highlights
 
 - Runs each delegated task in a separate `pi --mode json -p --no-session` subprocess.
 - Supports **single**, **parallel**, and **chain** modes.
-- Bundles default `scout`, `planner`, `worker`, `reviewer`, `debugger`, `verifier`, `security-auditor`, `docs-writer`, and `refactorer` agents.
-- Discovers user agents from `~/.pi/agent/agents/*.md` and optional project agents from `.pi/agents/*.md`.
-- Provides `/sub-agent-settings` to view and edit each sub-agent's model and thinking effort.
+- Bundles one general-purpose `subagent` agent. The parent writes the role, scope, and output format into the task text, so one profile covers discovery, implementation, review, and verification.
+- Makes `agent` optional. A call can be only `{ "task": "..." }`.
+- Discovers optional user agents from `~/.pi/agent/agents/*.md` and project agents from `.pi/agents/*.md`.
+- Provides `/sub-agent-settings` to set the model and thinking effort for the subagent in one place.
+- Gives the subagent the read-only search tools `grep`, `find`, and `ls` even when the parent session has them disabled.
+- Adds `readOnly` to keep a review or audit task from changing files, and `projectContext` to opt into project `AGENTS.md` files. Project context is off by default, because a large `AGENTS.md` dominates the cost of every turn.
+- Skips skills in child runs by default. Set `skills: true` only when the task must follow a named skill.
+- Stops a run after 60 turns so one task cannot become a long, expensive session.
 - Streams progress, usage, tool-call summaries, final Markdown output, failure diagnostics, and structured result details.
 - Sends delegated task prompts to child Pi processes over stdin instead of exposing prompt text in process arguments.
 - Truncates each included LLM-facing subagent output to Pi's default tool limits (2,000 lines / 50KB), writes full truncated text to a private temp file, and preserves structured details for rendering.
@@ -46,23 +51,29 @@ pi -e ./extensions/index.ts
 
 ## Usage
 
-Ask Pi to delegate to a bundled or user-defined agent:
+Delegate a task to the default subagent:
 
 ```text
-Use the scout subagent to locate the authentication entry points.
+Use a subagent to review the search endpoint. Review only, do not modify files.
+```
+
+A task alone is a valid call. The default agent is `subagent`:
+
+```json
+{ "task": "Review src/search.ts for error handling. Review only, do not modify files." }
 ```
 
 The tool accepts exactly one mode:
 
 ```json
-{ "agent": "scout", "task": "Find all authentication code" }
+{ "agent": "subagent", "task": "Find all authentication code" }
 ```
 
 ```json
 {
   "tasks": [
-    { "agent": "scout", "task": "Review database models" },
-    { "agent": "planner", "task": "Review CLI entry points" }
+    { "task": "Review database models" },
+    { "task": "Review CLI entry points" }
   ]
 }
 ```
@@ -70,9 +81,9 @@ The tool accepts exactly one mode:
 ```json
 {
   "chain": [
-    { "agent": "scout", "task": "Find code relevant to OAuth" },
-    { "agent": "planner", "task": "Plan OAuth support using this context:\n{previous}" },
-    { "agent": "worker", "task": "Implement the plan:\n{previous}" }
+    { "task": "Find code relevant to OAuth" },
+    { "task": "Plan OAuth support using this context:\n{previous}" },
+    { "task": "Implement the plan:\n{previous}" }
   ]
 }
 ```
@@ -81,25 +92,32 @@ Parallel mode is limited to 8 tasks total, with up to 4 running at once. Chain m
 
 ### Delegation best practices
 
-- Keep each delegated task self-contained: include the goal, relevant constraints, expected output, and any file paths already known.
-- Prefer `scout` for discovery, `planner` for read-only plans, `worker` for implementation, `reviewer` for code review, `debugger` for failures, `verifier` for evidence-gathering checks, `security-auditor` for threat-focused review, `docs-writer` for documentation updates, and `refactorer` for behavior-preserving cleanup.
+- Write the role into the task text: say what to do, where, the constraints, and the output format. Say "review only, do not modify files" when the task must not change code.
+- Keep each delegated task self-contained, but keep it short. Put a long brief in a file and pass the path. Very long inline tasks cost more tokens and can break tool-call JSON.
+- Tell the subagent to batch independent tool calls in one turn and to combine related shell commands into one `bash` call. This is the largest cost control for subagent runs.
+- Prefer one well-scoped call over many small calls. Each call pays its own prompt and start-up cost.
 - Use parallel mode for independent research tasks; use chain mode only when each step needs the previous step's output.
 - Keep chain handoffs concise. The full subagent details remain available in the tool result, but the next subagent only receives the previous final text through `{previous}`.
-- Review project-local agents before enabling `agentScope: "project"` or `"both"`, especially in repositories you did not create.
+- Name an agent only for an optional user agent in `~/.pi/agent/agents` or a project agent in `.pi/agents`. Review project-local agents before enabling `agentScope: "project"` or `"both"`, especially in repositories you did not create.
 
 ### Tool parameters
 
 | Field | Applies to | Description |
 | --- | --- | --- |
-| `agent` | Single | Agent name to run. Use with `task`. |
-| `task` | Single | Task text passed to the selected agent. Use with `agent`. |
-| `tasks` | Parallel | Array of `{ agent, task, cwd? }` items. |
-| `chain` | Chain | Array of `{ agent, task, cwd? }` steps, maximum 8. `{previous}` is replaced with the prior step's final output. |
-| `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. Bundled agents are always available. |
+| `agent` | Single, parallel, chain | Optional agent name. Omit it to use the default `subagent` agent. |
+| `task` | Single | Task text passed to the selected agent. Use with `agent`, or alone. |
+| `tasks` | Parallel | Array of `{ task, agent?, cwd? }` items. |
+| `chain` | Chain | Array of `{ task, agent?, cwd? }` steps, maximum 8. `{previous}` is replaced with the prior step's final output. |
+| `agentScope` | All | `"user"` (default), `"project"`, or `"both"`. The bundled agent is always available. |
+| `readOnly` | All | Defaults to `false`. When `true`, the subagent gets only `read`, `grep`, `find`, and `ls`, so it cannot change files or run commands. |
+| `projectContext` | All | Defaults to `false`. When `true`, the subagent loads project `AGENTS.md` and `CLAUDE.md` files. Keep it `false` for self-contained tasks and put the needed rules in the task text. |
+| `skills` | All | Defaults to `false`. When `true`, the subagent loads discovered and configured skills. Most tasks do not need them; a loaded skill set adds roughly 2.5k tokens to every turn. |
 | `confirmProjectAgents` | All | Defaults to `true`; asks before running project-local agents when UI support exists. In non-interactive runs, project-local agents are blocked unless this is explicitly set to `false`. |
 | `cwd` | All | Default working directory override for every subprocess in the call; per-task or per-step `cwd` overrides it. |
 
 `cwd` overrides on single calls, top-level parallel/chain calls, or individual parallel/chain tasks are resolved relative to the parent Pi working directory. A leading `@` is accepted and stripped, matching Pi file-reference conventions.
+
+Each run stops after 60 assistant turns. A run at that limit fails with `stopReason: "turn_limit"` and a message that asks the parent to split the task. This limit protects you from the long 100-plus-turn runs that cost the most.
 
 ## Agent files
 
@@ -119,23 +137,19 @@ System prompt for the agent goes here.
 
 Discovery order is bundled extension agents first, then user agents, then project agents. Later sources override earlier agents with the same `name`.
 
-`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. Pi's read-only `grep`, `find`, and `ls` tools may be disabled in the parent session by default; enable them in the parent tool allowlist when you want bundled read-only agents such as `scout`, `planner`, `reviewer`, and `security-auditor` to use repository search. `debugger` and `verifier` additionally request `bash` for diagnostics and checks. Implementation-oriented bundled agents (`worker`, `docs-writer`, and `refactorer`) omit `tools` so they inherit the parent session's active tools. `model` and `thinking` are optional and inherit independently: an agent with a custom `model` but no `thinking` still uses the parent session's thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that subagent. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
+`tools` may be a comma-separated string or a YAML list. Tool lists narrow the parent Pi session's active tool allowlist; omitted `tools` inherit the parent active tools. A subagent never enables a write, edit, or shell tool that is disabled in the parent session, and the `subagent` tool itself is always removed from child allowlists to avoid recursive delegation. The read-only tools `read`, `grep`, `find`, and `ls` are the exception: a subagent may use them even when the parent session has them disabled, because they cannot change the repository. Because the bundled `subagent` agent lists its tools explicitly, its child runs do not receive MCP or extension tools from the parent. Define a user agent without a `tools` field if you need those. `model` and `thinking` are optional and inherit independently: an agent with a custom `model` but no `thinking` still uses the parent session's thinking level. Set `thinking: off` to explicitly disable inherited reasoning effort for that subagent. Legacy `model: provider/model-id:high` entries are parsed as `model: provider/model-id` plus `thinking: high`.
 
 Unreadable agent files, missing required `name`/`description` metadata, invalid metadata types, and malformed YAML frontmatter are skipped so one bad agent file does not break discovery.
 
-## Bundled agents
+Subagents run with `--no-context-files` and `--no-skills` by default. Set `projectContext: true` on a call to load the project `AGENTS.md` and `CLAUDE.md` files, and `skills: true` to load skills. A large `AGENTS.md` is re-read on every turn, so it is the largest single cost in a subagent run. Put only the rules that the task needs into the task text when you leave it off.
+
+## Bundled agent
 
 | Agent | Purpose | Tools |
 | --- | --- | --- |
-| `scout` | Fast codebase reconnaissance and compressed context handoff. | `read`, `grep`, `find`, `ls` |
-| `planner` | Read-only implementation planning with acceptance criteria and verification steps. | `read`, `grep`, `find`, `ls` |
-| `worker` | General-purpose implementation using isolated context. | Parent active tools |
-| `reviewer` | Read-only code quality, correctness, and maintainability review. | `read`, `grep`, `find`, `ls` |
-| `debugger` | Systematic root-cause investigation for failures and regressions. | `read`, `grep`, `find`, `ls`, `bash` |
-| `verifier` | Runs checks and reports evidence before completion claims. | `read`, `grep`, `find`, `ls`, `bash` |
-| `security-auditor` | Read-only security review of trust boundaries and unsafe behavior. | `read`, `grep`, `find`, `ls` |
-| `docs-writer` | Documentation updates grounded in code and existing docs. | Parent active tools |
-| `refactorer` | Behavior-preserving cleanup and simplification. | Parent active tools |
+| `subagent` | General-purpose work in an isolated context. The task text selects the role: discover, implement, review, or verify. | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls` |
+
+`subagent` is the default when a call omits `agent`. It does not pin a model or a thinking level, so the parent session and `/sub-agent-settings` decide both. Its system prompt asks it to batch 2 to 4 independent tool calls per turn, to combine related shell commands into one `bash` call, and to avoid commentary-only turns.
 
 | Scope | Loaded agents |
 | --- | --- |
@@ -143,21 +157,23 @@ Unreadable agent files, missing required `name`/`description` metadata, invalid 
 | `project` | bundled + nearest `.pi/agents/*.md` |
 | `both` | bundled + user + nearest project agents |
 
+A project agent with the same name as the default still follows the confirmation rule: when a call omits `agent` and scope includes project agents, the default name is checked against the project directory before it runs.
+
 ## Slash commands
 
 ### `/sub-agent-settings`
 
-Opens an interactive settings window listing the bundled and user-defined sub-agents visible in the default `user` scope. In print/JSON modes where no interactive UI is available, the command exits with a warning instead of opening the settings window. Each row shows the current model and thinking effort, for example:
+Opens an interactive settings window listing the bundled and user-defined sub-agents visible in the default `user` scope. With the default configuration this window has one row. In print/JSON modes where no interactive UI is available, the command exits with a warning instead of opening the settings window. The row shows the current model and thinking effort, for example:
 
 ```text
-reviewer  openai/gpt-5.5 • high
+subagent  openai/gpt-5.5 • high
 ```
 
 Set either field to `inherit` to use the parent Pi session's active model or thinking level. Edits to user agents update their markdown frontmatter. Edits to bundled agents create or update a same-named user override in `~/.pi/agent/agents/`, so package files are not modified.
 
 ## Security model
 
-Project-local agents are repository-controlled prompts. They can request tools within the parent session's active tool allowlist and can instruct a subagent to read files, run shell commands, or edit code when those tools remain enabled. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
+Project-local agents are repository-controlled prompts. They can request write, edit, and shell tools only within the parent session's active tool allowlist. They can always request the read-only `read`, `grep`, `find`, and `ls` tools. Keep `agentScope` at the default `"user"` unless you trust the repository. With the default `confirmProjectAgents: true`, the extension confirms before running project-local agents when UI is available and blocks them in non-interactive runs, including when a call omits `agent` and a project agent overrides the default name. Set `confirmProjectAgents: false` only when you have already reviewed and trust the project agents.
 
 Each subagent is a normal child `pi` invocation in the selected `cwd`, so Pi packages and extensions enabled for that working directory still follow Pi's standard package security model. Install only trusted Pi packages and avoid `cwd` overrides into repositories whose Pi configuration you have not reviewed.
 
@@ -172,8 +188,10 @@ The text returned to the main model is truncated from the tail per included suba
 ## Error handling
 
 - Invalid requests return clear guidance and keep structured result details available to the main agent; partial or mixed mode arguments are rejected before spawning child Pi processes.
+- An unknown agent name returns the available names and, when a close match exists, a "Did you mean" suggestion. Omit `agent` to use the default `subagent` agent.
 - Invalid `cwd` overrides are rejected before spawning child Pi processes and include the resolved path in diagnostics.
-- Non-zero subprocess exits, `stopReason: "error"`, `stopReason: "aborted"`, and `stopReason: "length"` are treated as failed subagent runs.
+- Non-zero subprocess exits, `stopReason: "error"`, `stopReason: "aborted"`, `stopReason: "length"`, and `stopReason: "turn_limit"` are treated as failed subagent runs.
+- A run that reaches 60 assistant turns is stopped with a `turn_limit` failure and a message to split the task.
 - Subprocess launch failures, such as a missing `pi` executable, include the attempted command and OS error in the LLM-facing failure output.
 - Malformed child stdout in JSON mode is captured as a diagnostic; if no JSON messages are produced, the run is treated as a failed subagent invocation instead of silently returning `(no output)`.
 - Failed subagent runs and pre-spawn failures (invalid arguments, nested calls, project-agent confirmation blocks, or task-limit violations) are marked as Pi tool errors without dropping streamed output, subprocess diagnostics, or per-agent details.
@@ -227,7 +245,7 @@ After installing the packed package in a scratch project, run a short interactiv
 
 1. Start Pi with the installed package enabled and confirm the startup header lists `pi-sub-agent`.
 2. Run `/sub-agent-settings` and verify bundled agents are listed; exit without saving if no changes are needed.
-3. Ask for a simple `scout` delegation in a disposable repository and confirm the child process streams progress and returns structured output.
+3. Ask for a simple subagent delegation in a disposable repository and confirm the child process streams progress and returns structured output.
 4. If testing project-local agents, review the `.pi/agents/*.md` files first and leave `confirmProjectAgents` enabled unless the repository is trusted.
 
 Key files:

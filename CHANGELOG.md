@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking
+
+- Replaced the nine bundled specialist agents (scout, planner, worker, reviewer, debugger, verifier, security-auditor, docs-writer, refactorer) with one general-purpose `subagent` agent. The parent writes the role into the task text. Set the model and thinking effort once with `/sub-agent-settings`.
+
+### Changed
+
+- Made `agent` optional in single, parallel, and chain calls. A call with only `{ "task": "..." }` runs the default `subagent` agent.
+- Added `readOnly` to restrict a child run to `read`, `grep`, `find`, and `ls`. Use it for review, audit, and investigation tasks.
+- Child runs now use `--no-context-files` by default, because a large project `AGENTS.md` is re-read on every turn. Added `projectContext: true` to load `AGENTS.md` and `CLAUDE.md` when a task needs project-wide rules.
+- Child runs now use `--no-skills` by default. Added `skills: true` for tasks that must follow a named skill. A skill set costs about 2.5k tokens on every turn.
+- Added a 60-turn limit per run. A run that reaches the limit fails with `stopReason: "turn_limit"` and asks the parent to split the task.
+- Made the bundled agent request `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`, and let a subagent use the read-only tools `read`, `grep`, `find`, and `ls` even when the parent session has them disabled.
+- Added tool-use rules to the bundled agent prompt: batch 2 to 4 independent tool calls per turn, combine related shell commands into one `bash` call, and do not send commentary-only turns.
+- Added model-facing guidance to keep task text short, to put long briefs in a file, and to prefer one well-scoped call over many small calls.
+- Unknown agent errors now include a "Did you mean" suggestion when a close name exists, and state that `agent` can be omitted.
+
+### Fixed
+
+- A call that omits `agent` now still triggers the project-agent confirmation when a project agent overrides the default name.
+
 ## v0.1.5
 
 ### Fixed
